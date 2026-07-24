@@ -1,4 +1,11 @@
-treamlit
 psycopg2-binary
 pandas
 plotly
+uvicorn
+psycopg2-binary
+starlette
+jinja2
+python-multipart
+itsdangerous
+streamlit
+pandas
