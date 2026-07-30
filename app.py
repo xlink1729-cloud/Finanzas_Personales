@@ -9,7 +9,7 @@ import plotly.express as px
 # =============================================================================
 # ZONA HORARIA LOCAL (MÉXICO)
 # =============================================================================
-TIMEZONE_MEXICO = pytz.timezone('America/Mexico_City')
+TIMEZONE_MEXICO = ZoneInfo('America/Mexico_City')
 
 
 def obtener_fecha_local():
