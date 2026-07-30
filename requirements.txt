@@ -2,7 +2,6 @@ psycopg2-binary
 pandas
 plotly
 uvicorn
-pytz
 starlette
 jinja2
 python-multipart
