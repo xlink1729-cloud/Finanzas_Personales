@@ -9,7 +9,7 @@ import plotly.express as px
 # =============================================================================
 # ZONA HORARIA LOCAL (MÉXICO)
 # =============================================================================
-TIMEZONE_MEXICO = ZoneInfo('America/Mexico_City')
+TIMEZONE_MEXICO = pytz.timezone('America/Mexico_City')
 
 
 def obtener_fecha_local():
@@ -282,7 +282,7 @@ with tab_flujo:
             df_flujo['fecha'] = pd.to_datetime(df_flujo['fecha'])
             
             fecha_local_actual = obtener_fecha_local()
-            hoy_ts = pd.Timestamp(fecha_local_actual.date())
+            hoy_ts = pd.Timestamp(fecha_local_actual)
             hoy_date = fecha_local_actual.date()
 
             st.markdown("### 📅 Ciclo de Nómina Actual")
