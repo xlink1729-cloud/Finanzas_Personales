@@ -283,7 +283,7 @@ with tab_flujo:
             
             fecha_local_actual = obtener_fecha_local()
             hoy_ts = pd.Timestamp(fecha_local_actual)
-            hoy_date = fecha_local_actual()
+            hoy_date = fecha_local_actual
 
             st.markdown("### 📅 Ciclo de Nómina Actual")
             
