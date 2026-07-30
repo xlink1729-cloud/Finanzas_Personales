@@ -2,10 +2,10 @@ psycopg2-binary
 pandas
 plotly
 uvicorn
-psycopg2-binary
+pytz
 starlette
 jinja2
 python-multipart
 itsdangerous
 streamlit
-pandas
+numpy
