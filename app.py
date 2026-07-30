@@ -5,7 +5,7 @@ import plotly.express as px
 import psycopg2
 import hashlib
 from datetime import datetime
-import pytz
+from zoneinfo import ZoneInfo
 
 # -------------------------------------------------------------------------
 # 1. CONFIGURACIÓN DE PÁGINA Y ZONA HORARIA
