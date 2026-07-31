@@ -534,6 +534,9 @@ with tab_ahorros:
     st.markdown("### 📈 Portafolio de Inversiones (CETES, Fintual, etc.)")
     st.caption("Esta sección analiza únicamente tus cuentas de inversión y su rendimiento.")
 
+    # Garantizamos que existe el id de usuario activo en esta sesión
+    current_user_id = st.session_state.get("user_id")
+
     with st.expander("➕ Registrar / Actualizar Saldo de Inversión", expanded=True):
         with st.form("form_inversiones", clear_on_submit=True):
             col_inv1, col_inv2, col_inv3 = st.columns(3)
@@ -560,13 +563,15 @@ with tab_ahorros:
                 desc_completa = f"[{plataforma}] {tipo_operacion}: {notas_inv}".strip()
                 categoria_inv = f"Inversión - {plataforma}"
                 
-                if guardar_movimiento("Inversion", monto_inv, categoria_inv, desc_completa, fecha_inv, USER_ID):
+                # Usamos st.session_state["user_id"] de manera directa
+                if guardar_movimiento("Inversion", monto_inv, categoria_inv, desc_completa, fecha_inv, current_user_id):
                     st.success(f"✅ Portafolio de {plataforma} actualizado.")
                     st.rerun()
 
     st.markdown("---")
 
-    df_raw = obtener_movimientos(USER_ID)
+    # Consulta aislada usando estrictamente la sesión actual
+    df_raw = obtener_movimientos(current_user_id)
     
     if not df_raw.empty:
         plataformas_conocidas = ["fintual", "cetes", "nu", "mercado pago", "gbm", "emergencia"]
@@ -619,8 +624,8 @@ with tab_ahorros:
             total_inversiones = df_resumen_inv['Saldo Actual'].sum()
             total_variacion = df_resumen_inv['Variación ($)'].sum()
 
-            # --- CALCULOS DE META (SIEMPRE EJECUTADOS ANTES DEL RENDER) ---
-            META_INVERSION = 100000.0  # Puedes ajustar la cifra de la meta aquí
+            # --- CÁLCULOS DE META ---
+            META_INVERSION = 100000.0
             faltante_meta = max(0.0, META_INVERSION - total_inversiones)
             progreso_pct = min(100.0, (total_inversiones / META_INVERSION) * 100) if META_INVERSION > 0 else 0
 
@@ -641,7 +646,6 @@ with tab_ahorros:
                 )
                 col_met3.metric("Faltante p/ Meta", f"${faltante_meta:,.2f}", f"{progreso_pct:.1f}% Alcanzado")
 
-            # Barra de avance siempre visible independientemente del modo privacidad
             st.caption(f"Progreso hacia la meta de **{fmt_monto(META_INVERSION)}**")
             st.progress(progreso_pct / 100.0)
 
@@ -723,14 +727,14 @@ with tab_ahorros:
                             
                             btn_act_inv = st.form_submit_button("💾 Guardar Cambios en Inversión")
                             if btn_act_inv:
-                                if actualizar_movimiento(id_inv_sel, "Inversion", ei_monto, f"Inversión - {datos_inv_reg['Plataforma']}", ei_desc, ei_fecha, USER_ID):
+                                if actualizar_movimiento(id_inv_sel, "Inversion", ei_monto, f"Inversión - {datos_inv_reg['Plataforma']}", ei_desc, ei_fecha, current_user_id):
                                     st.success("✅ Registro de inversión actualizado.")
                                     st.rerun()
 
                     with col_einv2:
                         st.markdown("#### 🗑️ Eliminar Inversión")
                         if st.button("❌ Borrar Registro de Inversión", use_container_width=True):
-                            if eliminar_movimiento(id_inv_sel, USER_ID):
+                            if eliminar_movimiento(id_inv_sel, current_user_id):
                                 st.success("✅ Registro eliminado.")
                                 st.rerun()
 
