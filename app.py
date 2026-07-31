@@ -105,7 +105,7 @@ def fmt_monto(valor):
 # =============================================================================
 # 4. CAPA DE BASE DE DATOS (POSTGRESQL MULTIUSUARIO)
 # =============================================================================
-@st.cache_data(ttl=60)
+#@st.cache_data(ttl=60)
 def obtener_movimientos(user_id):
     conn = None
     try:
@@ -538,6 +538,9 @@ with tab_ahorros:
     st.markdown("### 📈 Portafolio de Inversiones (CETES, Fintual, etc.)")
     st.caption("Esta sección analiza únicamente tus cuentas de inversión y su rendimiento.")
 
+    # Asegurar la extracción correcta del USER_ID activo
+    USER_ID = st.session_state.get("user_id") or st.session_state.get("id")
+
     with st.expander("➕ Registrar / Actualizar Saldo de Inversión", expanded=True):
         with st.form("form_inversiones", clear_on_submit=True):
             col_inv1, col_inv2, col_inv3 = st.columns(3)
@@ -554,7 +557,7 @@ with tab_ahorros:
                     "Tipo de Movimiento", 
                     ["Actualización de Saldo Total", "Aportación Directa", "Retiro Parcial/Total"]
                 )
-                fecha_inv = st.date_input("Fecha", obtener_fecha_local(), key="fecha_inv")
+                fecha_inv = st.date_input("Fecha", obtener_fecha_local, key="fecha_inv")
 
             with col_inv3:
                 notas_inv = st.text_input("Notas / Detalle", placeholder="Ej. Saldo al revisar la app hoy")
@@ -571,10 +574,15 @@ with tab_ahorros:
     st.markdown("---")
 
     df_raw = obtener_movimientos(USER_ID)
+    
     if not df_raw.empty:
-        # Máscara robusta para detectar inversiones
-        mask_inv = df_raw['categoria'].str.contains("inversi", case=False, na=False) | \
-                   df_raw['tipo'].str.contains("inversi", case=False, na=False)
+        # Filtro ampliado para incluir variantes o nombres de plataformas
+        plataformas_conocidas = ["fintual", "cetes", "nu", "mercado pago", "gbm", "emergencia"]
+        mask_inv = (
+            df_raw['categoria'].str.contains("inversi", case=False, na=False) |
+            df_raw['tipo'].str.contains("inversi", case=False, na=False) |
+            df_raw['categoria'].str.lower().str.contains('|'.join(plataformas_conocidas), na=False)
+        )
         
         df_inversiones = df_raw[mask_inv].copy()
         
@@ -620,19 +628,32 @@ with tab_ahorros:
             total_variacion = df_resumen_inv['Variación ($)'].sum()
 
             st.markdown("### 📊 Valor Total del Portafolio de Inversión")
-            col_met1, col_met2 = st.columns(2)
+            col_met1, col_met2, col_met3 = st.columns(3)
             
             col_met1.metric("Patrimonio Invertido Total", fmt_monto(total_inversiones))
             
             if ocultar_saldos:
-                col_met2.metric("Última Variación Ganancia/Pérdida", "$ ••••••")
+                col_met2.metric("Última Variación", "$ ••••••")
+                col_met3.metric("Faltante para Meta", "$ ••••••")
             else:
                 col_met2.metric(
-                    "Última Variación Ganancia/Pérdida", 
+                    "Última Variación", 
                     f"${total_variacion:,.2f}", 
                     delta=f"${total_variacion:,.2f}",
                     delta_color="normal"
                 )
+                
+                # --- LÓGICA DE META DE INVERSIÓN ---
+                META_INVERSION = 100000.0  # Configura aquí tu monto de meta objetivo
+                faltante_meta = max(0.0, META_INVERSION - total_inversiones)
+                progreso_pct = min(100.0, (total_inversiones / META_INVERSION) * 100) if META_INVERSION > 0 else 0
+                
+                col_met3.metric("Faltante p/ Meta", f"${faltante_meta:,.2f}", f"{progreso_pct:.1f}% Alcanzado")
+
+            # Barra de avance hacia la meta
+            if 'META_INVERSION' in locals() and META_INVERSION > 0:
+                st.caption(f"Progreso hacia la meta de **${META_INVERSION:,.2f}**")
+                st.progress(progreso_pct / 100.0)
 
             st.markdown("---")
 
