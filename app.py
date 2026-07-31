@@ -11,7 +11,6 @@ import plotly.express as px
 # =============================================================================
 TIMEZONE_MEXICO = ZoneInfo('America/Mexico_City')
 
-
 def obtener_fecha_local():
     return datetime.now(TIMEZONE_MEXICO).date()
 
@@ -103,9 +102,8 @@ def fmt_monto(valor):
     return f"${valor:,.2f}"
 
 # =============================================================================
-# 4. CAPA DE BASE DE DATOS (POSTGRESQL MULTIUSUARIO)
+# 4. CAPA DE BASE DE DATOS (POSTGRESQL MULTIUSUARIO - SIN CACHE EN LECTURA)
 # =============================================================================
-#@st.cache_data(ttl=60)
 def obtener_movimientos(user_id):
     conn = None
     try:
@@ -272,7 +270,6 @@ with tab_flujo:
     df_raw = obtener_movimientos(USER_ID)
 
     if not df_raw.empty:
-        # Máscara robusta para separar Flujo de Inversiones
         mask_inversion = df_raw['categoria'].str.contains("inversi", case=False, na=False) | \
                          df_raw['tipo'].str.contains("inversi", case=False, na=False)
         
@@ -348,7 +345,7 @@ with tab_flujo:
 
             st.markdown("---")
 
-            # 5.5 ESTRUCTURA DE GASTOS
+            # ESTRUCTURA DE GASTOS
             st.markdown("### 📈 Distribución de Gastos: Fijos vs. Variables vs. Inversión")
 
             categorias_fijas = [
@@ -448,7 +445,6 @@ with tab_flujo:
             df_display = df_flujo.copy()
             df_display['fecha_str'] = df_display['fecha'].dt.strftime('%Y-%m-%d')
             
-            # Formato explícito para columna ID
             config_columnas = {
                 "id": st.column_config.NumberColumn("ID", format="%d"),
                 "fecha_str": "Fecha",
@@ -538,9 +534,6 @@ with tab_ahorros:
     st.markdown("### 📈 Portafolio de Inversiones (CETES, Fintual, etc.)")
     st.caption("Esta sección analiza únicamente tus cuentas de inversión y su rendimiento.")
 
-    # Asegurar la extracción correcta del USER_ID activo
-    USER_ID = st.session_state.get("user_id") or st.session_state.get("id")
-
     with st.expander("➕ Registrar / Actualizar Saldo de Inversión", expanded=True):
         with st.form("form_inversiones", clear_on_submit=True):
             col_inv1, col_inv2, col_inv3 = st.columns(3)
@@ -576,7 +569,6 @@ with tab_ahorros:
     df_raw = obtener_movimientos(USER_ID)
     
     if not df_raw.empty:
-        # Filtro ampliado para incluir variantes o nombres de plataformas
         plataformas_conocidas = ["fintual", "cetes", "nu", "mercado pago", "gbm", "emergencia"]
         mask_inv = (
             df_raw['categoria'].str.contains("inversi", case=False, na=False) |
@@ -627,6 +619,11 @@ with tab_ahorros:
             total_inversiones = df_resumen_inv['Saldo Actual'].sum()
             total_variacion = df_resumen_inv['Variación ($)'].sum()
 
+            # --- CALCULOS DE META (SIEMPRE EJECUTADOS ANTES DEL RENDER) ---
+            META_INVERSION = 100000.0  # Puedes ajustar la cifra de la meta aquí
+            faltante_meta = max(0.0, META_INVERSION - total_inversiones)
+            progreso_pct = min(100.0, (total_inversiones / META_INVERSION) * 100) if META_INVERSION > 0 else 0
+
             st.markdown("### 📊 Valor Total del Portafolio de Inversión")
             col_met1, col_met2, col_met3 = st.columns(3)
             
@@ -634,7 +631,7 @@ with tab_ahorros:
             
             if ocultar_saldos:
                 col_met2.metric("Última Variación", "$ ••••••")
-                col_met3.metric("Faltante para Meta", "$ ••••••")
+                col_met3.metric("Faltante p/ Meta", "$ ••••••", f"{progreso_pct:.1f}% Alcanzado")
             else:
                 col_met2.metric(
                     "Última Variación", 
@@ -642,18 +639,11 @@ with tab_ahorros:
                     delta=f"${total_variacion:,.2f}",
                     delta_color="normal"
                 )
-                
-                # --- LÓGICA DE META DE INVERSIÓN ---
-                META_INVERSION = 100000.0  # Configura aquí tu monto de meta objetivo
-                faltante_meta = max(0.0, META_INVERSION - total_inversiones)
-                progreso_pct = min(100.0, (total_inversiones / META_INVERSION) * 100) if META_INVERSION > 0 else 0
-                
                 col_met3.metric("Faltante p/ Meta", f"${faltante_meta:,.2f}", f"{progreso_pct:.1f}% Alcanzado")
 
-            # Barra de avance hacia la meta
-            if 'META_INVERSION' in locals() and META_INVERSION > 0:
-                st.caption(f"Progreso hacia la meta de **${META_INVERSION:,.2f}**")
-                st.progress(progreso_pct / 100.0)
+            # Barra de avance siempre visible independientemente del modo privacidad
+            st.caption(f"Progreso hacia la meta de **{fmt_monto(META_INVERSION)}**")
+            st.progress(progreso_pct / 100.0)
 
             st.markdown("---")
 
