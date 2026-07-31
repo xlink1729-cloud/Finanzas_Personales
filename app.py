@@ -402,26 +402,17 @@ with tab_flujo:
                 st.markdown("---")
                 st.markdown("### 🗓️ Comportamiento de Gasto por Semana")
 
-                # 1. Calcular el número de semana dentro del ciclo quincenal (Semana 1, Semana 2, etc.)
-                df_gastos_ciclo['dias_desde_inicio'] = (df_gastos_ciclo['fecha'] - inicio_q.normalize()).dt.days
-                df_gastos_ciclo['semana_num'] = (df_gastos_ciclo['dias_desde_inicio'] // 7) + 1
+                # Usamos %W para que cuente las semanas del año de forma estándar (Semana 30 para fines de Julio)
+                df_gastos_ciclo['semana_num'] = df_gastos_ciclo['fecha'].dt.strftime('%W').astype(int)
+                df_gastos_ciclo['semana_lbl'] = "Semana " + df_gastos_ciclo['semana_num'].astype(str)
 
-                # 2. Asignar etiquetas con el rango de fechas para que sea fácil de leer
-                def crear_etiqueta_semana(row):
-                    num_sem = row['semana_num']
-                    fecha_inicio_sem = inicio_q + pd.Timedelta(days=(num_sem - 1) * 7)
-                    fecha_fin_sem = min(fecha_inicio_sem + pd.Timedelta(days=6), fin_q)
-                    return f"Semana {num_sem} ({fecha_inicio_sem.strftime('%d/%m')} - {fecha_fin_sem.strftime('%d/%m')})"
-
-                df_gastos_ciclo['semana_lbl'] = df_gastos_ciclo.apply(crear_etiqueta_semana, axis=1)
-
-                # Agrupado para la gráfica y resumen ordenado por número de semana
+                # Agrupado para la gráfica y resumen
                 gasto_semanal = df_gastos_ciclo.groupby(['semana_num', 'semana_lbl'])['monto'].sum().reset_index().sort_values('semana_num')
 
                 col_graf, col_resumen = st.columns([2, 1])
 
                 with col_graf:
-                    st.markdown("**Gasto Acumulado por Semana de la Quincena**")
+                    st.markdown("**Gasto Acumulado por Semana**")
                     st.bar_chart(gasto_semanal, x='semana_lbl', y='monto', color="#2E7D32")
 
                 with col_resumen:
