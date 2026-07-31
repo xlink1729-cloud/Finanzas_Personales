@@ -402,15 +402,26 @@ with tab_flujo:
                 st.markdown("---")
                 st.markdown("### 🗓️ Comportamiento de Gasto por Semana")
 
-                df_gastos_ciclo['semana_num'] = df_gastos_ciclo['fecha'].dt.isocalendar().week
-                df_gastos_ciclo['semana_lbl'] = "Semana " + df_gastos_ciclo['semana_num'].astype(str)
+                # 1. Calcular el número de semana dentro del ciclo quincenal (Semana 1, Semana 2, etc.)
+                df_gastos_ciclo['dias_desde_inicio'] = (df_gastos_ciclo['fecha'] - inicio_q.normalize()).dt.days
+                df_gastos_ciclo['semana_num'] = (df_gastos_ciclo['dias_desde_inicio'] // 7) + 1
 
-                gasto_semanal = df_gastos_ciclo.groupby('semana_lbl')['monto'].sum().reset_index()
+                # 2. Asignar etiquetas con el rango de fechas para que sea fácil de leer
+                def crear_etiqueta_semana(row):
+                    num_sem = row['semana_num']
+                    fecha_inicio_sem = inicio_q + pd.Timedelta(days=(num_sem - 1) * 7)
+                    fecha_fin_sem = min(fecha_inicio_sem + pd.Timedelta(days=6), fin_q)
+                    return f"Semana {num_sem} ({fecha_inicio_sem.strftime('%d/%m')} - {fecha_fin_sem.strftime('%d/%m')})"
+
+                df_gastos_ciclo['semana_lbl'] = df_gastos_ciclo.apply(crear_etiqueta_semana, axis=1)
+
+                # Agrupado para la gráfica y resumen ordenado por número de semana
+                gasto_semanal = df_gastos_ciclo.groupby(['semana_num', 'semana_lbl'])['monto'].sum().reset_index().sort_values('semana_num')
 
                 col_graf, col_resumen = st.columns([2, 1])
 
                 with col_graf:
-                    st.markdown("**Gasto Acumulado por Semana**")
+                    st.markdown("**Gasto Acumulado por Semana de la Quincena**")
                     st.bar_chart(gasto_semanal, x='semana_lbl', y='monto', color="#2E7D32")
 
                 with col_resumen:
@@ -419,13 +430,13 @@ with tab_flujo:
                     
                     if ocultar_saldos:
                         st.metric("Promedio por Semana", "$ ••••••")
-                        df_mostrar_sem = gasto_semanal.copy()
+                        df_mostrar_sem = gasto_semanal[['semana_lbl', 'monto']].copy()
                         df_mostrar_sem['monto'] = "$ ••••••"
                         st.dataframe(df_mostrar_sem, column_config={"semana_lbl": "Semana", "monto": "Total Gastado"}, hide_index=True)
                     else:
                         st.metric("Promedio por Semana", fmt_monto(promedio_sem))
                         st.dataframe(
-                            gasto_semanal,
+                            gasto_semanal[['semana_lbl', 'monto']],
                             column_config={
                                 "semana_lbl": "Semana",
                                 "monto": st.column_config.NumberColumn("Total Gastado", format="$%.2f")
