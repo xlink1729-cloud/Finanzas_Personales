@@ -106,7 +106,7 @@ def fmt_monto(valor):
     return f"${valor:,.2f}"
 
 # =============================================================================
-# 4. CAPA DE BASE DE DATOS (POSTGRESQL MULTIUSUARIO - SIN CACHE EN LECTURA)
+# 4. CAPA DE BASE DE DATOS (POSTGRESQL MULTIUSUARIO)
 # =============================================================================
 def obtener_movimientos(user_id):
     conn = None
@@ -176,8 +176,6 @@ def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fe
     try:
         conn = get_connection()
         cur = conn.cursor()
-        
-        # ⚠️ EL WHERE DEBE INCLUIR TANTO EL ID DEL REGISTRO COMO EL USER_ID
         query = """
             UPDATE movimientos 
             SET tipo = %s, monto = %s, categoria = %s, descripcion = %s, fecha = %s, user_id = %s
@@ -402,91 +400,11 @@ with tab_flujo:
                         st.write(f"**{row['Tipo_Estructura']}:** {fmt_monto(row['monto'])} ({row['Porcentaje']:.1f}%)")
 
                 st.markdown("---")
-                st.markdown("### 📅 Comportamiento de Gasto por Semana")
-
-                df_gastos_ciclo['Semana_Num'] = df_gastos_ciclo['fecha'].dt.strftime('%U').astype(int)
-                df_gastos_ciclo['Semana_Label'] = df_gastos_ciclo['fecha'].dt.strftime('Semana %U')
-
-                df_semanal = df_gastos_ciclo.groupby(['Semana_Num', 'Semana_Label'])['monto'].sum().reset_index()
-                df_semanal = df_semanal.sort_values('Semana_Num')
-
-                col_sem1, col_sem2 = st.columns([1.2, 1])
-
-                with col_sem1:
-                    fig_semana = px.bar(
-                        df_semanal,
-                        x='Semana_Label',
-                        y='monto',
-                        text_auto='.2f',
-                        title="Gasto Acumulado por Semana",
-                        labels={'Semana_Label': 'Semana', 'monto': 'Total ($)'},
-                        color_discrete_sequence=['#2CA02C']
-                    )
-                    fig_semana.update_layout(xaxis_title="", yaxis_title="Monto ($)", margin=dict(t=30, b=10, l=10, r=10))
-                    st.plotly_chart(fig_semana, use_container_width=True)
-
-                with col_sem2:
-                    st.caption("**Resumen Semanal:**")
-                    promedio_semanal = df_semanal['monto'].mean()
-                    st.metric("Promedio por Semana", fmt_monto(promedio_semanal))
-
-                    st.dataframe(
-                        df_semanal[['Semana_Label', 'monto']],
-                        column_config={
-                            "Semana_Label": "Semana",
-                            "monto": st.column_config.NumberColumn("Total Gastado", format="$%.2f")
-                        },
-                        use_container_width=True,
-                        hide_index=True
-                    )
-            else:
-                st.info("Aún no hay gastos registrados dentro de este ciclo quincenal para generar desgloses semanales o gráficos de pastel.")
-
-
                 st.markdown("### 🗓️ Comportamiento de Gasto por Semana")
 
-# Asegurar que la columna 'fecha' sea datetime y calcular el número de semana
-df_gastos['semana_num'] = df_gastos['fecha'].dt.isocalendar().week
-df_gastos['semana_lbl'] = "Semana " + df_gastos['semana_num'].astype(str)
-
-# Agrupado para la gráfica y resumen
-gasto_semanal = df_gastos.groupby('semana_lbl')['monto'].sum().reset_index()
-
-col_graf, col_resumen = st.columns([2, 1])
-
-with col_graf:
-    st.markdown("**Gasto Acumulado por Semana**")
-    st.bar_chart(gasto_semanal, x='semana_lbl', y='monto', color="#2E7D32")
-
-with col_resumen:
-    st.markdown("**Resumen Semanal:**")
-    promedio_sem = gasto_semanal['monto'].mean() if not gasto_semanal.empty else 0.0
-    
-    if ocultar_saldos:
-        st.metric("Promedio por Semana", "$ ••••••")
-        df_mostrar_sem = gasto_semanal.copy()
-        df_mostrar_sem['monto'] = "$ ••••••"
-        st.dataframe(df_mostrar_sem, column_config={"semana_lbl": "Semana", "monto": "Total Gastado"}, hide_index=True)
-    else:
-        st.metric("Promedio por Semana", fmt_monto(promedio_sem))
-        st.dataframe(
-            gasto_semanal,
-            column_config={
-                "semana_lbl": "Semana",
-                "monto": st.column_config.NumberColumn("Total Gastado", format="$%.2f")
-            },
-            hide_index=True
-        )
-
-        # --- NUEVO: DESGLOSE DETALLADO DE GASTOS POR SEMANA ---
-st.markdown("---")
-                st.markdown("### 🗓️ Comportamiento de Gasto por Semana")
-
-                # Usamos df_gastos_ciclo para el análisis semanal
                 df_gastos_ciclo['semana_num'] = df_gastos_ciclo['fecha'].dt.isocalendar().week
                 df_gastos_ciclo['semana_lbl'] = "Semana " + df_gastos_ciclo['semana_num'].astype(str)
 
-                # Agrupado para la gráfica y resumen
                 gasto_semanal = df_gastos_ciclo.groupby('semana_lbl')['monto'].sum().reset_index()
 
                 col_graf, col_resumen = st.columns([2, 1])
@@ -522,7 +440,6 @@ st.markdown("---")
                     if semanas_disponibles:
                         semana_seleccionada = st.selectbox("Selecciona la semana a revisar:", semanas_disponibles)
                         
-                        # Filtrar los gastos pertenecientes a la semana elegida
                         df_desglose_semana = df_gastos_ciclo[df_gastos_ciclo['semana_lbl'] == semana_seleccionada].copy()
                         df_desglose_semana['fecha_str'] = df_desglose_semana['fecha'].dt.strftime('%Y-%m-%d')
                         
@@ -657,7 +574,6 @@ with tab_ahorros:
     st.markdown("### 📈 Portafolio de Inversiones (CETES, Fintual, etc.)")
     st.caption("Esta sección analiza únicamente tus cuentas de inversión y su rendimiento.")
 
-    # Garantizamos que existe el id de usuario activo en esta sesión
     current_user_id = st.session_state.get("user_id")
 
     with st.expander("➕ Registrar / Actualizar Saldo de Inversión", expanded=True):
@@ -686,14 +602,12 @@ with tab_ahorros:
                 desc_completa = f"[{plataforma}] {tipo_operacion}: {notas_inv}".strip()
                 categoria_inv = f"Inversión - {plataforma}"
                 
-                # Usamos st.session_state["user_id"] de manera directa
                 if guardar_movimiento("Inversion", monto_inv, categoria_inv, desc_completa, fecha_inv, current_user_id):
                     st.success(f"✅ Portafolio de {plataforma} actualizado.")
                     st.rerun()
 
     st.markdown("---")
 
-    # Consulta aislada usando estrictamente la sesión actual
     df_raw = obtener_movimientos(current_user_id)
     
     if not df_raw.empty:
@@ -751,10 +665,9 @@ with tab_ahorros:
             METAS_PLATAFORMA = {
                 "Fintual": 10000.0,
                 "Nu (Cajita)": 10000.0,
-                "CETES Directo": 20000.0,  # <-- Ajusta aquí el monto de tu colchón de emergencia
+                "CETES Directo": 20000.0,
             }
 
-            # Suma de la meta total basada en las plataformas configuradas
             META_INVERSION_TOTAL = sum(METAS_PLATAFORMA.values())
             faltante_meta = max(0.0, META_INVERSION_TOTAL - total_inversiones)
             progreso_pct = min(100.0, (total_inversiones / META_INVERSION_TOTAL) * 100) if META_INVERSION_TOTAL > 0 else 0
@@ -785,7 +698,6 @@ with tab_ahorros:
 
             for idx, (plat_nombre, meta_monto) in enumerate(METAS_PLATAFORMA.items()):
                 with cols_m[idx]:
-                    # Buscar el saldo actual registrado para esta plataforma
                     row_plat = df_resumen_inv[df_resumen_inv['Plataforma'].str.contains(plat_nombre.split()[0], case=False, na=False)]
                     saldo_plat = row_plat['Saldo Actual'].values[0] if not row_plat.empty else 0.0
                     
