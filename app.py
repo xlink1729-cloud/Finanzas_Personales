@@ -171,27 +171,26 @@ def eliminar_movimiento(id_mov, user_id):
         if conn:
             conn.close()
 
-def actualizar_movimiento(id_mov, tipo, monto, categoria, descripcion, fecha, user_id):
+def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fecha, user_id):
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(
-            """
+        
+        # ⚠️ EL WHERE DEBE INCLUIR TANTO EL ID DEL REGISTRO COMO EL USER_ID
+        query = """
             UPDATE movimientos 
-            SET tipo = %s, monto = %s, categoria = %s, descripcion = %s, fecha = %s
+            SET tipo = %s, monto = %s, categoria = %s, descripcion = %s, fecha = %s, user_id = %s
             WHERE id = %s AND user_id = %s
-            """,
-            (tipo, monto, categoria, descripcion.strip(), fecha, id_mov, user_id)
-        )
+        """
+        cur.execute(query, (tipo, monto, categoria, descripcion, fecha, user_id, id_movimiento, user_id))
         conn.commit()
         cur.close()
-        st.cache_data.clear()
         return True
     except Exception as e:
         if conn:
             conn.rollback()
-        st.error(f"Error al actualizar el registro: {e}")
+        st.error(f"Error al actualizar: {e}")
         return False
     finally:
         if conn:
@@ -628,10 +627,17 @@ with tab_ahorros:
             total_inversiones = df_resumen_inv['Saldo Actual'].sum()
             total_variacion = df_resumen_inv['Variación ($)'].sum()
 
-            # --- CÁLCULOS DE META ---
-            META_INVERSION = 100000.0
-            faltante_meta = max(0.0, META_INVERSION - total_inversiones)
-            progreso_pct = min(100.0, (total_inversiones / META_INVERSION) * 100) if META_INVERSION > 0 else 0
+            # --- CÁLCULOS DE METAS POR PLATAFORMA ---
+            METAS_PLATAFORMA = {
+                "Fintual": 10000.0,
+                "Nu (Cajita)": 10000.0,
+                "CETES Directo": 20000.0,  # <-- Ajusta aquí el monto de tu colchón de emergencia
+            }
+
+            # Suma de la meta total basada en las plataformas configuradas
+            META_INVERSION_TOTAL = sum(METAS_PLATAFORMA.values())
+            faltante_meta = max(0.0, META_INVERSION_TOTAL - total_inversiones)
+            progreso_pct = min(100.0, (total_inversiones / META_INVERSION_TOTAL) * 100) if META_INVERSION_TOTAL > 0 else 0
 
             st.markdown("### 📊 Valor Total del Portafolio de Inversión")
             col_met1, col_met2, col_met3 = st.columns(3)
@@ -640,7 +646,7 @@ with tab_ahorros:
             
             if ocultar_saldos:
                 col_met2.metric("Última Variación", "$ ••••••")
-                col_met3.metric("Faltante p/ Meta", "$ ••••••", f"{progreso_pct:.1f}% Alcanzado")
+                col_met3.metric("Faltante p/ Meta Total", "$ ••••••", f"{progreso_pct:.1f}% Alcanzado")
             else:
                 col_met2.metric(
                     "Última Variación", 
@@ -648,10 +654,32 @@ with tab_ahorros:
                     delta=f"${total_variacion:,.2f}",
                     delta_color="normal"
                 )
-                col_met3.metric("Faltante p/ Meta", f"${faltante_meta:,.2f}", f"{progreso_pct:.1f}% Alcanzado")
+                col_met3.metric("Faltante p/ Meta Total", f"${faltante_meta:,.2f}", f"{progreso_pct:.1f}% Alcanzado")
 
-            st.caption(f"Progreso hacia la meta de **{fmt_monto(META_INVERSION)}**")
+            st.caption(f"Progreso global hacia la meta de **{fmt_monto(META_INVERSION_TOTAL)}**")
             st.progress(progreso_pct / 100.0)
+
+            # --- DESGLOSE DE METAS INDIVIDUALES ---
+            st.markdown("#### 🎯 Progreso de Metas Específicas")
+            cols_m = st.columns(len(METAS_PLATAFORMA))
+
+            for idx, (plat_nombre, meta_monto) in enumerate(METAS_PLATAFORMA.items()):
+                with cols_m[idx]:
+                    # Buscar el saldo actual registrado para esta plataforma
+                    row_plat = df_resumen_inv[df_resumen_inv['Plataforma'].str.contains(plat_nombre.split()[0], case=False, na=False)]
+                    saldo_plat = row_plat['Saldo Actual'].values[0] if not row_plat.empty else 0.0
+                    
+                    pct_plat = min(100.0, (saldo_plat / meta_monto) * 100) if meta_monto > 0 else 0
+                    
+                    st.markdown(f"**{plat_nombre}**")
+                    if ocultar_saldos:
+                        st.caption(f"Meta: {fmt_monto(meta_monto)}")
+                        st.progress(pct_plat / 100.0)
+                        st.text(f"•••••• ({pct_plat:.1f}%)")
+                    else:
+                        st.caption(f"{fmt_monto(saldo_plat)} de {fmt_monto(meta_monto)}")
+                        st.progress(pct_plat / 100.0)
+                        st.text(f"{pct_plat:.1f}% alcanzado")
 
             st.markdown("---")
 
