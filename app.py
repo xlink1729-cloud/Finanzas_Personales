@@ -80,6 +80,10 @@ if not USER_ID:
     st.warning("Sesión no válida. Por favor, vuelve a iniciar sesión.")
     st.stop()
 
+# 🔍 DIAGNÓSTICO EN TIEMPO REAL
+st.sidebar.error(f"👤 Usuario: {st.session_state.get('username')}")
+st.sidebar.error(f"🆔 ID en sesión: {st.session_state.get('user_id')}")
+
 # =============================================================================
 # 3. SIDEBAR Y MODO PRIVACIDAD
 # =============================================================================
