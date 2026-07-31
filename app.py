@@ -557,7 +557,7 @@ with tab_ahorros:
                     "Tipo de Movimiento", 
                     ["Actualización de Saldo Total", "Aportación Directa", "Retiro Parcial/Total"]
                 )
-                fecha_inv = st.date_input("Fecha", obtener_fecha_local, key="fecha_inv")
+                fecha_inv = st.date_input("Fecha", obtener_fecha_local(), key="fecha_inv")
 
             with col_inv3:
                 notas_inv = st.text_input("Notas / Detalle", placeholder="Ej. Saldo al revisar la app hoy")
