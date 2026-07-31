@@ -442,6 +442,88 @@ with tab_flujo:
             else:
                 st.info("Aún no hay gastos registrados dentro de este ciclo quincenal para generar desgloses semanales o gráficos de pastel.")
 
+
+                st.markdown("### 🗓️ Comportamiento de Gasto por Semana")
+
+# Asegurar que la columna 'fecha' sea datetime y calcular el número de semana
+df_gastos['semana_num'] = df_gastos['fecha'].dt.isocalendar().week
+df_gastos['semana_lbl'] = "Semana " + df_gastos['semana_num'].astype(str)
+
+# Agrupado para la gráfica y resumen
+gasto_semanal = df_gastos.groupby('semana_lbl')['monto'].sum().reset_index()
+
+col_graf, col_resumen = st.columns([2, 1])
+
+with col_graf:
+    st.markdown("**Gasto Acumulado por Semana**")
+    st.bar_chart(gasto_semanal, x='semana_lbl', y='monto', color="#2E7D32")
+
+with col_resumen:
+    st.markdown("**Resumen Semanal:**")
+    promedio_sem = gasto_semanal['monto'].mean() if not gasto_semanal.empty else 0.0
+    
+    if ocultar_saldos:
+        st.metric("Promedio por Semana", "$ ••••••")
+        df_mostrar_sem = gasto_semanal.copy()
+        df_mostrar_sem['monto'] = "$ ••••••"
+        st.dataframe(df_mostrar_sem, column_config={"semana_lbl": "Semana", "monto": "Total Gastado"}, hide_index=True)
+    else:
+        st.metric("Promedio por Semana", fmt_monto(promedio_sem))
+        st.dataframe(
+            gasto_semanal,
+            column_config={
+                "semana_lbl": "Semana",
+                "monto": st.column_config.NumberColumn("Total Gastado", format="$%.2f")
+            },
+            hide_index=True
+        )
+
+        # --- NUEVO: DESGLOSE DETALLADO DE GASTOS POR SEMANA ---
+        st.markdown("---")
+        with st.expander("🔍 Ver desglose de gastos de una semana específica"):
+            semanas_disponibles = gasto_semanal['semana_lbl'].tolist()
+            
+            if semanas_disponibles:
+                semana_seleccionada = st.selectbox("Selecciona la semana a revisar:", semanas_disponibles)
+                
+                # Filtrar los gastos pertenecientes a la semana elegida
+                df_desglose_semana = df_gastos[df_gastos['semana_lbl'] == semana_seleccionada].copy()
+                df_desglose_semana['fecha_str'] = df_desglose_semana['fecha'].dt.strftime('%Y-%m-%d')
+                
+                st.markdown(f"**Movimientos registrados en la {semana_seleccionada}:**")
+                
+                columnas_mostrar = ['fecha_str', 'categoria', 'descripcion', 'monto']
+                
+                # Respetar el Modo Privacidad si está activo
+                if ocultar_saldos:
+                    df_desglose_show = df_desglose_semana[columnas_mostrar].copy()
+                    df_desglose_show['monto'] = "$ ••••••"
+                    st.dataframe(
+                        df_desglose_show,
+                        column_config={
+                            "fecha_str": "Fecha",
+                            "categoria": "Categoría",
+                            "descripcion": "Descripción / Notas",
+                            "monto": "Monto"
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    st.dataframe(
+                        df_desglose_semana[columnas_mostrar],
+                        column_config={
+                            "fecha_str": "Fecha",
+                            "categoria": "Categoría",
+                            "descripcion": "Descripción / Notas",
+                            "monto": st.column_config.NumberColumn("Monto", format="$%.2f")
+                        },
+                        use_container_width=True,
+                        hide_index=True
+                    )
+            else:
+                st.info("No hay registros de gasto para desglosar.")
+
             st.markdown("---")
 
             st.markdown("### 📋 Historial Completo de Nómina y Gastos")
