@@ -213,7 +213,7 @@ with tab_flujo:
     with st.expander("➕ Registrar Movimiento de Nómina, Gastos o Retiros", expanded=True):
         tipo = st.selectbox(
             "Tipo de Movimiento", 
-            ["Egreso", "Ingreso", "Transferencia / Retiro"],
+            ["Egreso", "Ingreso", "Retiro"],
             key="selector_tipo_movimiento"
         )
         
@@ -224,7 +224,7 @@ with tab_flujo:
                 "Ventas / Ingresos Extra", 
                 "Otros Ingresos"
             ]
-        elif tipo == "Transferencia / Retiro":
+        elif tipo == "Retiro":
             categorias_dinamicas = [
                 "Retiro de Cajero (Débito ➔ Efectivo)",
                 "Traspaso entre Cuentas"
@@ -306,8 +306,11 @@ with tab_flujo:
             mask_debito_global = df_flujo['descripcion'].str.contains("Débito", na=False) | (~df_flujo['descripcion'].str.contains("Efectivo", na=False))
             ingresos_totales_historicos = df_flujo[df_flujo['tipo'] == 'Ingreso']['monto'].sum()
             gastos_debito_historicos = df_flujo[(df_flujo['tipo'] == 'Egreso') & mask_debito_global]['monto'].sum()
-            retiros_historicos = df_flujo[df_flujo['tipo'] == 'Transferencia / Retiro']['monto'].sum()
             
+            # --- CORRECCIÓN CLAVE AQUÍ ---
+            retiros_historicos = df_flujo[df_flujo['tipo'] == 'Retiro']['monto'].sum()
+            
+            # Resta correctamente los retiros de la nómina
             nomina_restante = ingresos_totales_historicos - gastos_debito_historicos - retiros_historicos
 
             nomina_ingresada_ciclo = df_q_actual[df_q_actual['tipo'] == 'Ingreso']['monto'].sum()
@@ -403,11 +406,9 @@ with tab_flujo:
                 st.markdown("---")
                 st.markdown("### 🗓️ Comportamiento de Gasto por Semana")
 
-                # Usamos %W para que cuente las semanas del año de forma estándar (Semana 30 para fines de Julio)
                 df_gastos_ciclo['semana_num'] = df_gastos_ciclo['fecha'].dt.strftime('%W').astype(int)
                 df_gastos_ciclo['semana_lbl'] = "Semana " + df_gastos_ciclo['semana_num'].astype(str)
 
-                # Agrupado para la gráfica y resumen
                 gasto_semanal = df_gastos_ciclo.groupby(['semana_num', 'semana_lbl'])['monto'].sum().reset_index().sort_values('semana_num')
 
                 col_graf, col_resumen = st.columns([2, 1])
@@ -436,7 +437,6 @@ with tab_flujo:
                             hide_index=True
                         )
 
-                # --- DESGLOSE DETALLADO DE GASTOS POR SEMANA ---
                 with st.expander("🔍 Ver desglose de gastos de una semana específica"):
                     semanas_disponibles = gasto_semanal['semana_lbl'].tolist()
                     
@@ -534,7 +534,7 @@ with tab_flujo:
                         with st.form("form_editar_flujo"):
                             e_fecha = st.date_input("Fecha Correcta", datos_reg['fecha'].date())
                             
-                            tipos_op = ["Egreso", "Ingreso", "Transferencia / Retiro", "Inversion"]
+                            tipos_op = ["Egreso", "Ingreso", "Retiro", "Inversion"]
                             idx_tipo = tipos_op.index(datos_reg['tipo']) if datos_reg['tipo'] in tipos_op else 0
                             e_tipo = st.selectbox("Tipo", tipos_op, index=idx_tipo)
                             
@@ -664,7 +664,6 @@ with tab_ahorros:
             total_inversiones = df_resumen_inv['Saldo Actual'].sum()
             total_variacion = df_resumen_inv['Variación ($)'].sum()
 
-            # --- CÁLCULOS DE METAS POR PLATAFORMA ---
             METAS_PLATAFORMA = {
                 "Fintual": 10000.0,
                 "Nu (Cajita)": 10000.0,
@@ -695,7 +694,6 @@ with tab_ahorros:
             st.caption(f"Progreso global hacia la meta de **{fmt_monto(META_INVERSION_TOTAL)}**")
             st.progress(progreso_pct / 100.0)
 
-            # --- DESGLOSE DE METAS INDIVIDUALES ---
             st.markdown("#### 🎯 Progreso de Metas Específicas")
             cols_m = st.columns(len(METAS_PLATAFORMA))
 
@@ -832,7 +830,6 @@ with tab_efectivo:
 
         if submit_retiro:
             desc_ret_final = f"[💳 Tarjeta de Débito (Nómina)] Retiro Cajero: {desc_retiro}".strip()
-            # Usamos "Retiro" (6 caracteres) para no exceder VARCHAR(10) en la BD
             if guardar_movimiento("Retiro", monto_retiro, "Retiro de Cajero (Débito ➔ Efectivo)", desc_ret_final, fecha_retiro, USER_ID):
                 st.success(f"✅ Retiro de {fmt_monto(monto_retiro)} ingresado a la Billetera.")
                 st.rerun()
@@ -858,21 +855,17 @@ with tab_efectivo:
 
         if submit_gasto_e:
             desc_ge_final = f"[💵 Efectivo] {desc_gasto_e}".strip()
-            # "Egreso" tiene 6 caracteres, entra perfectamente en VARCHAR(10)
             if guardar_movimiento("Egreso", monto_gasto_e, cat_gasto_e, desc_ge_final, fecha_gasto_e, USER_ID):
                 st.success(f"✅ Gasto de {fmt_monto(monto_gasto_e)} en {cat_gasto_e} registrado.")
                 st.rerun()
 
     st.markdown("---")
 
-    # --- CÁLCULO DINÁMICO DEL SALDO EN BILLETERA ---
     df_raw_efectivo = obtener_movimientos(USER_ID)
 
     if not df_raw_efectivo.empty:
-        # Retiros históricos (Buscamos tipo 'Retiro')
         total_retirado = df_raw_efectivo[df_raw_efectivo['tipo'] == 'Retiro']['monto'].sum()
         
-        # Gastos en efectivo (Salidas de la Billetera)
         mask_gastos_efectivo = (df_raw_efectivo['tipo'] == 'Egreso') & (df_raw_efectivo['descripcion'].str.contains("Efectivo", na=False))
         total_gastado_efectivo = df_raw_efectivo[mask_gastos_efectivo]['monto'].sum()
 
