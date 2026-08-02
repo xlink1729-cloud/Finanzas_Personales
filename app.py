@@ -866,10 +866,12 @@ with tab_efectivo:
     if not df_raw_efectivo.empty:
         total_retirado = df_raw_efectivo[df_raw_efectivo['tipo'] == 'Retiro']['monto'].sum()
         
-        mask_gastos_efectivo = (df_raw_efectivo['tipo'] == 'Egreso') & (df_raw_efectivo['descripcion'].str.contains("Efectivo", na=False))
-        total_gastado_efectivo = df_raw_efectivo[mask_gastos_efectivo]['monto'].sum()
+        mask_gastos_efectivo = (
+            df_raw_efectivo['descripcion'].str.contains("efectivo", case=False, na=False) & 
+            (df_raw_efectivo['tipo'] != 'Retiro')
+            )
 
-        saldo_billetera_actual = total_retirado - total_gastado_efectivo
+        total_gastado_efectivo = df_raw_efectivo[mask_gastos_efectivo]['monto'].sum()
 
         st.markdown("### 📊 Balance Actual de la Billetera")
         
