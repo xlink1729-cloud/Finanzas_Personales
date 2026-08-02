@@ -832,7 +832,8 @@ with tab_efectivo:
 
         if submit_retiro:
             desc_ret_final = f"[💳 Tarjeta de Débito (Nómina)] Retiro Cajero: {desc_retiro}".strip()
-            if guardar_movimiento("Transferencia / Retiro", monto_retiro, "Retiro de Cajero (Débito ➔ Efectivo)", desc_ret_final, fecha_retiro, USER_ID):
+            # Usamos "Retiro" (6 caracteres) para no exceder VARCHAR(10) en la BD
+            if guardar_movimiento("Retiro", monto_retiro, "Retiro de Cajero (Débito ➔ Efectivo)", desc_ret_final, fecha_retiro, USER_ID):
                 st.success(f"✅ Retiro de {fmt_monto(monto_retiro)} ingresado a la Billetera.")
                 st.rerun()
 
@@ -857,6 +858,7 @@ with tab_efectivo:
 
         if submit_gasto_e:
             desc_ge_final = f"[💵 Efectivo] {desc_gasto_e}".strip()
+            # "Egreso" tiene 6 caracteres, entra perfectamente en VARCHAR(10)
             if guardar_movimiento("Egreso", monto_gasto_e, cat_gasto_e, desc_ge_final, fecha_gasto_e, USER_ID):
                 st.success(f"✅ Gasto de {fmt_monto(monto_gasto_e)} en {cat_gasto_e} registrado.")
                 st.rerun()
@@ -867,8 +869,8 @@ with tab_efectivo:
     df_raw_efectivo = obtener_movimientos(USER_ID)
 
     if not df_raw_efectivo.empty:
-        # Retiros históricos (Entradas a la Billetera)
-        total_retirado = df_raw_efectivo[df_raw_efectivo['tipo'] == 'Transferencia / Retiro']['monto'].sum()
+        # Retiros históricos (Buscamos tipo 'Retiro')
+        total_retirado = df_raw_efectivo[df_raw_efectivo['tipo'] == 'Retiro']['monto'].sum()
         
         # Gastos en efectivo (Salidas de la Billetera)
         mask_gastos_efectivo = (df_raw_efectivo['tipo'] == 'Egreso') & (df_raw_efectivo['descripcion'].str.contains("Efectivo", na=False))
@@ -886,7 +888,7 @@ with tab_efectivo:
         st.markdown("---")
         st.markdown("### 📋 Historial Exclusivo de Efectivo")
         
-        mask_movs_efectivo = (df_raw_efectivo['tipo'] == 'Transferencia / Retiro') | mask_gastos_efectivo
+        mask_movs_efectivo = (df_raw_efectivo['tipo'] == 'Retiro') | mask_gastos_efectivo
         df_hist_efectivo = df_raw_efectivo[mask_movs_efectivo].copy()
 
         if not df_hist_efectivo.empty:
