@@ -864,14 +864,18 @@ with tab_efectivo:
     df_raw_efectivo = obtener_movimientos(USER_ID)
 
     if not df_raw_efectivo.empty:
+        # 1. Total que ha entrado a la billetera desde el cajero
         total_retirado = df_raw_efectivo[df_raw_efectivo['tipo'] == 'Retiro']['monto'].sum()
         
+        # 2. Detecta todos los gastos realizados en efectivo (sin importar mayúsculas/minúsculas)
         mask_gastos_efectivo = (
             df_raw_efectivo['descripcion'].str.contains("efectivo", case=False, na=False) & 
             (df_raw_efectivo['tipo'] != 'Retiro')
-            )
-
+        )
         total_gastado_efectivo = df_raw_efectivo[mask_gastos_efectivo]['monto'].sum()
+
+        # 3. Cálculo del disponible (aquí se define la variable que daba error)
+        saldo_billetera_actual = total_retirado - total_gastado_efectivo
 
         st.markdown("### 📊 Balance Actual de la Billetera")
         
