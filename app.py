@@ -199,9 +199,10 @@ def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fe
 # =============================================================================
 st.title("💰 Control de Finanzas e Inversiones")
 
-tab_flujo, tab_ahorros = st.tabs([
+tab_flujo, tab_ahorros, tab_efectivo = st.tabs([
     "💵 Flujo Quincenal y Nómina", 
-    "📈 Portafolio de Inversiones (CETES, Fintual)"
+    "📈 Portafolio de Inversiones (CETES, Fintual)",
+    "👛 Billetera y Efectivo"
 ])
 
 # =============================================================================
@@ -808,3 +809,105 @@ with tab_ahorros:
             st.info("Aún no has registrado cuentas en tu portafolio de inversión.")
     else:
         st.info("No hay datos registrados aún.")
+
+# =============================================================================
+# PESTAÑA 3: BILLETERA Y EFECTIVO
+# =============================================================================
+with tab_efectivo:
+    st.header("👛 Control de Billetera y Efectivo")
+    st.caption("Administra los billetes que retiras del cajero sin desajustar tu saldo bancario ni duplicar registros.")
+
+    col_ef1, col_ef2 = st.columns(2)
+
+    with col_ef1:
+        st.subheader("1. 🏦 Registrar Retiro de Cajero")
+        st.info("Esto descuenta el dinero de tu Débito y lo transfiere a tu Billetera (no cuenta como gasto aún).")
+        
+        with st.form("form_retiro_efectivo", clear_on_submit=True):
+            monto_retiro = st.number_input("Monto Retirado ($)", min_value=10.0, step=50.0, format="%.2f")
+            fecha_retiro = st.date_input("Fecha del Retiro", obtener_fecha_local(), key="fecha_retiro_ef")
+            desc_retiro = st.text_input("Detalle / Cajero", placeholder="Ej. Cajero Santander, Retiro de emergencia, etc.")
+            
+            submit_retiro = st.form_submit_button("🏦 Registrar Entrada a Billetera", use_container_width=True)
+
+        if submit_retiro:
+            desc_ret_final = f"[💳 Tarjeta de Débito (Nómina)] Retiro Cajero: {desc_retiro}".strip()
+            if guardar_movimiento("Transferencia / Retiro", monto_retiro, "Retiro de Cajero (Débito ➔ Efectivo)", desc_ret_final, fecha_retiro, USER_ID):
+                st.success(f"✅ Retiro de {fmt_monto(monto_retiro)} ingresado a la Billetera.")
+                st.rerun()
+
+    with col_ef2:
+        st.subheader("2. 💸 Registrar Gasto Realizado en Efectivo")
+        st.info("Esto descuenta directamente del efectivo de tu bolsillo y asigna la categoría de gasto.")
+        
+        with st.form("form_gasto_efectivo", clear_on_submit=True):
+            monto_gasto_e = st.number_input("Monto Gastado ($)", min_value=0.01, step=10.0, format="%.2f")
+            cat_gasto_e = st.selectbox("Categoría del Gasto", [
+                "Alimentación / Súper", 
+                "Transporte / Gasolina", 
+                "Ocio / Entretenimiento", 
+                "Vivienda / Servicios", 
+                "Salud / Gastos Médicos", 
+                "Otros Egresos"
+            ])
+            fecha_gasto_e = st.date_input("Fecha del Gasto", obtener_fecha_local(), key="fecha_gasto_ef")
+            desc_gasto_e = st.text_input("Detalle del Gasto", placeholder="Ej. Tacos, Pasaje, Propina, etc.")
+            
+            submit_gasto_e = st.form_submit_button("💸 Registrar Salida de Billetera", use_container_width=True)
+
+        if submit_gasto_e:
+            desc_ge_final = f"[💵 Efectivo] {desc_gasto_e}".strip()
+            if guardar_movimiento("Egreso", monto_gasto_e, cat_gasto_e, desc_ge_final, fecha_gasto_e, USER_ID):
+                st.success(f"✅ Gasto de {fmt_monto(monto_gasto_e)} en {cat_gasto_e} registrado.")
+                st.rerun()
+
+    st.markdown("---")
+
+    # --- CÁLCULO DINÁMICO DEL SALDO EN BILLETERA ---
+    df_raw_efectivo = obtener_movimientos(USER_ID)
+
+    if not df_raw_efectivo.empty:
+        # Retiros históricos (Entradas a la Billetera)
+        total_retirado = df_raw_efectivo[df_raw_efectivo['tipo'] == 'Transferencia / Retiro']['monto'].sum()
+        
+        # Gastos en efectivo (Salidas de la Billetera)
+        mask_gastos_efectivo = (df_raw_efectivo['tipo'] == 'Egreso') & (df_raw_efectivo['descripcion'].str.contains("Efectivo", na=False))
+        total_gastado_efectivo = df_raw_efectivo[mask_gastos_efectivo]['monto'].sum()
+
+        saldo_billetera_actual = total_retirado - total_gastado_efectivo
+
+        st.markdown("### 📊 Balance Actual de la Billetera")
+        
+        c_b1, c_b2, c_b3 = st.columns(3)
+        c_b1.metric("🏦 Total Retirado de Cajeros", fmt_monto(total_retirado))
+        c_b2.metric("💸 Total Gastado en Efectivo", fmt_monto(total_gastado_efectivo), delta_color="inverse")
+        c_b3.metric("💵 Disponible en Bolsillo / Billetera", fmt_monto(saldo_billetera_actual))
+
+        st.markdown("---")
+        st.markdown("### 📋 Historial Exclusivo de Efectivo")
+        
+        mask_movs_efectivo = (df_raw_efectivo['tipo'] == 'Transferencia / Retiro') | mask_gastos_efectivo
+        df_hist_efectivo = df_raw_efectivo[mask_movs_efectivo].copy()
+
+        if not df_hist_efectivo.empty:
+            df_hist_efectivo['fecha_str'] = pd.to_datetime(df_hist_efectivo['fecha']).dt.strftime('%Y-%m-%d')
+            
+            config_ef_cols = {
+                "id": st.column_config.NumberColumn("ID", format="%d"),
+                "fecha_str": "Fecha",
+                "tipo": "Operación",
+                "categoria": "Categoría",
+                "monto": st.column_config.NumberColumn("Monto ($)", format="$%.2f"),
+                "descripcion": "Detalle"
+            }
+
+            if ocultar_saldos:
+                df_hist_show = df_hist_efectivo.copy()
+                df_hist_show['monto'] = "••••••"
+                st.dataframe(df_hist_show[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_ef_cols, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(df_hist_efectivo[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_ef_cols, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aún no tienes movimientos registrados en efectivo.")
+    else:
+        st.info("No hay datos suficientes para calcular el balance de la billetera.")
