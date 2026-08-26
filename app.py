@@ -70,9 +70,16 @@ def mostrar_login():
             border-radius: 25px;
             border: 1px solid rgba(255, 255, 255, 0.3);
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
-            padding: 40px 30px;
+            padding: 30px 30px 40px 30px;
             max-width: 420px;
             margin: auto;
+        }
+
+        /* Estilo para centrar la imagen del logo */
+        div[data-testid="stForm"] [data-testid="stImage"] {
+            display: flex;
+            justify-content: center;
+            margin-bottom: -10px;
         }
 
         /* Estilo para las etiquetas de los inputs */
@@ -115,12 +122,19 @@ def mostrar_login():
     """, unsafe_allow_html=True)
 
     # Centrado vertical y horizontal usando columnas
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
         with st.form("form_login"):
-            st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 25px; font-weight: 700;'>LOGIN</h2>", unsafe_allow_html=True)
+            # 🖼️ MOSTRAR LOGO DESDE LA CARPETA STATIC
+            # Asegúrate de cambiar 'logo.png' por el nombre exacto de tu archivo (ej. logo.png, logo.jpg, etc.)
+            try:
+                st.image("static/logo.png", width=110)
+            except Exception:
+                pass # Si el nombre es diferente o no lo encuentra, continúa sin romper la app
+
+            st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 20px; font-weight: 700;'>LOGIN</h2>", unsafe_allow_html=True)
             
             usuario = st.text_input("👤 Usuario", placeholder="Ingresa tu usuario")
             contrasena = st.text_input("🔒 Contraseña", type="password", placeholder="Ingresa tu contraseña")
