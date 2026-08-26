@@ -72,7 +72,7 @@ def mostrar_login():
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
             padding: 30px 30px 40px 30px;
             max-width: 420px;
-            margin: auto;
+            margin: -15px auto 0 auto; /* Ajusta el -15px para acercar o alejar la tarjeta del logo */
         }
 
         /* Estilo para centrar la imagen del logo */
