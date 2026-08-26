@@ -51,22 +51,93 @@ def validar_usuario_db(username, password):
             conn.close()
 
 def mostrar_login():
-    st.title("🔒 Acceso Restringido")
-    with st.form("form_login"):
-        usuario = st.text_input("Usuario")
-        contrasena = st.text_input("Contraseña", type="password")
-        submit = st.form_submit_button("Iniciar Sesión", use_container_width=True)
+    # Estilos CSS para la tarjeta flotante estilizada (Glassmorphism)
+    st.markdown("""
+        <style>
+        /* Fondo con degradado suave */
+        .stApp {
+            background: linear-gradient(135deg, #2b3a67 0%, #496a81 35%, #669bbc 70%, #8c7a6b 100%);
+        }
         
-        if submit:
-            user_data = validar_usuario_db(usuario, contrasena)
-            if user_data:
-                st.session_state["autenticado"] = True
-                st.session_state["user_id"] = user_data[0]
-                st.session_state["username"] = user_data[1]
-                st.rerun()
-            else:
-                st.error("Usuario o contraseña incorrectos.")
+        /* Ocultar barra superior por defecto en la pantalla de login */
+        header {visibility: hidden;}
 
+        /* Tarjeta principal estilo recuadro translúcido */
+        div[data-testid="stForm"] {
+            background: rgba(255, 255, 255, 0.22);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
+            padding: 40px 30px;
+            max-width: 420px;
+            margin: auto;
+        }
+
+        /* Estilo para las etiquetas de los inputs */
+        div[data-testid="stForm"] label {
+            color: #ffffff !important;
+            font-weight: 600;
+        }
+
+        /* Estilo de las cajas de texto */
+        div[data-testid="stForm"] input {
+            background-color: rgba(43, 67, 99, 0.65) !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            border-radius: 8px !important;
+        }
+        
+        div[data-testid="stForm"] input::placeholder {
+            color: rgba(255, 255, 255, 0.6) !important;
+        }
+
+        /* Botón LOGIN en forma de cápsula */
+        div[data-testid="stForm"] button[type="submit"] {
+            background: linear-gradient(90deg, #48cae4 0%, #0077b6 100%) !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 20px !important;
+            padding: 10px 20px !important;
+            font-weight: bold !important;
+            width: 100% !important;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2) !important;
+            transition: all 0.3s ease !important;
+            margin-top: 15px;
+        }
+        
+        div[data-testid="stForm"] button[type="submit"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.3) !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Centrado vertical y horizontal usando columnas
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+
+    with col2:
+        with st.form("form_login"):
+            st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 25px; font-weight: 700;'>LOGIN</h2>", unsafe_allow_html=True)
+            
+            usuario = st.text_input("👤 Usuario", placeholder="Ingresa tu usuario")
+            contrasena = st.text_input("🔒 Contraseña", type="password", placeholder="Ingresa tu contraseña")
+            
+            submit = st.form_submit_button("LOGIN", use_container_width=True)
+            
+            if submit:
+                user_data = validar_usuario_db(usuario, contrasena)
+                if user_data:
+                    st.session_state["autenticado"] = True
+                    st.session_state["user_id"] = user_data[0]
+                    st.session_state["username"] = user_data[1]
+                    st.rerun()
+                else:
+                    st.error("Usuario o contraseña incorrectos.")
+
+# --- CONTROL DE SESIÓN ---
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
 
