@@ -122,7 +122,7 @@ def mostrar_login():
     """, unsafe_allow_html=True)
 
     # Centrado vertical y horizontal usando columnas
-    st.markdown("<div style='margin-top: -10px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top: 0px;'></div>", unsafe_allow_html=True)
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
