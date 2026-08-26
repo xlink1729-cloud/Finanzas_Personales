@@ -51,16 +51,22 @@ def validar_usuario_db(username, password):
             conn.close()
 
 def mostrar_login():
-    # Estilos CSS para la tarjeta flotante estilizada (Glassmorphism)
+    # Estilos CSS con Glassmorphism y margen superior reducido
     st.markdown("""
         <style>
-        /* Fondo con degradado suave */
+        /* Fondo general con degradado */
         .stApp {
             background: linear-gradient(135deg, #2b3a67 0%, #496a81 35%, #669bbc 70%, #8c7a6b 100%);
         }
         
-        /* Ocultar barra superior por defecto en la pantalla de login */
+        /* Ocultar barra superior de Streamlit */
         header {visibility: hidden;}
+
+        /* REDUCIR ESPACIO SUPERIOR DE LA PÁGINA (Sube todo el contenido) */
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 0rem !important;
+        }
 
         /* Tarjeta principal estilo recuadro translúcido */
         div[data-testid="stForm"] {
@@ -72,14 +78,7 @@ def mostrar_login():
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
             padding: 30px 30px 40px 30px;
             max-width: 420px;
-            margin: -15px auto 0 auto; /* Ajusta el -15px para acercar o alejar la tarjeta del logo */
-        }
-
-        /* Estilo para centrar la imagen del logo */
-        div[data-testid="stForm"] [data-testid="stImage"] {
-            display: flex;
-            justify-content: center;
-            margin-bottom: -10px;
+            margin: auto;
         }
 
         /* Estilo para las etiquetas de los inputs */
@@ -100,7 +99,7 @@ def mostrar_login():
             color: rgba(255, 255, 255, 0.6) !important;
         }
 
-        /* Botón LOGIN en forma de cápsula */
+        /* Botón LOGIN estilo cápsula */
         div[data-testid="stForm"] button[type="submit"] {
             background: linear-gradient(90deg, #48cae4 0%, #0077b6 100%) !important;
             color: white !important;
@@ -121,12 +120,11 @@ def mostrar_login():
         </style>
     """, unsafe_allow_html=True)
 
-    # Centrado vertical y horizontal usando columnas
-    st.markdown("<div style='margin-top: 0px;'></div>", unsafe_allow_html=True)
+    # Centrado en pantalla usando columnas
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        # 1. Logo afuera del recuadro
+        # 1. Logo centrado afuera de la tarjeta
         col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
         with col_img2:
             try:
@@ -134,7 +132,7 @@ def mostrar_login():
             except Exception:
                 pass
 
-        # 2. Tarjeta de Login limpia
+        # 2. Formulario de acceso dentro de la tarjeta
         with st.form("form_login"):
             st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 20px; font-weight: 700;'>LOGIN</h2>", unsafe_allow_html=True)
             
@@ -152,24 +150,6 @@ def mostrar_login():
                     st.rerun()
                 else:
                     st.error("Usuario o contraseña incorrectos.")
-
-# --- CONTROL DE SESIÓN ---
-if "autenticado" not in st.session_state:
-    st.session_state["autenticado"] = False
-
-if not st.session_state["autenticado"]:
-    mostrar_login()
-    st.stop()
-
-USER_ID = st.session_state.get("user_id")
-
-if not USER_ID:
-    st.warning("Sesión no válida. Por favor, vuelve a iniciar sesión.")
-    st.stop()
-
-# 🔍 DIAGNÓSTICO EN TIEMPO REAL
-st.sidebar.error(f"👤 Usuario: {st.session_state.get('username')}")
-st.sidebar.error(f"🆔 ID en sesión: {st.session_state.get('user_id')}")
 
 # =============================================================================
 # 3. SIDEBAR Y MODO PRIVACIDAD
