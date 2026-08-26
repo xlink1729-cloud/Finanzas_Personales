@@ -126,14 +126,16 @@ def mostrar_login():
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        with st.form("form_login"):
-            # 🖼️ MOSTRAR LOGO DESDE LA CARPETA STATIC
-            # Asegúrate de cambiar 'logo.png' por el nombre exacto de tu archivo (ej. logo.png, logo.jpg, etc.)
+        # 1. Logo afuera del recuadro
+        col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
+        with col_img2:
             try:
-                st.image("static/logo.png", width=110)
+                st.image("static/logo.png", use_container_width=True)
             except Exception:
-                pass # Si el nombre es diferente o no lo encuentra, continúa sin romper la app
+                pass
 
+        # 2. Tarjeta de Login limpia
+        with st.form("form_login"):
             st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 20px; font-weight: 700;'>LOGIN</h2>", unsafe_allow_html=True)
             
             usuario = st.text_input("👤 Usuario", placeholder="Ingresa tu usuario")
