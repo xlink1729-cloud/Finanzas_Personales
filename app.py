@@ -66,37 +66,43 @@ def mostrar_login():
         .block-container {
             padding-top: 1rem !important;
             padding-bottom: 0rem !important;
+        /* Tarjeta principal estilo recuadro translúcido */
+        div[data-testid="stForm"] {
+            background: rgba(255, 255, 255, 0.22);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border-radius: 25px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
+            padding: 30px 30px 40px 30px;
+            max-width: 420px;
+            margin: auto;
         }
 
-        /* 1. Corrección de etiquetas (Usuario / Contraseña en Blanco Brillante) */
-        div[data-testid="stForm"] label, 
+        /* Etiquetas (Usuario / Contraseña) */
+        div[data-testid="stForm"] label,
         div[data-testid="stForm"] label p {
-            color: #FFFFFF !important;
+            color: #ffffff !important;
             font-weight: 600 !important;
-            font-size: 0.95rem !important;
-            text-shadow: 0px 1px 3px rgba(0, 0, 0, 0.6);
         }
 
-        /* 2. Color del icono del ojo/revelar contraseña */
-        div[data-testid="stForm"] button[aria-label="Show password"] svg,
-        div[data-testid="stForm"] button[aria-label="Hide password"] svg {
-            fill: #FFFFFF !important;
-        }
-
-        /* 3. Borde al hacer clic/focus en las cajas de texto */
-        div[data-testid="stForm"] input:focus {
-            border-color: #48cae4 !important;
-            box-shadow: 0 0 8px rgba(72, 202, 228, 0.5) !important;
+        /* Cajas de texto oscuras translúcidas */
+        div[data-testid="stForm"] input {
+            background-color: rgba(43, 67, 99, 0.65) !important;
+            color: #ffffff !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            border-radius: 8px !important;
         }
         
+        /* Placeholder en blanco suave */
         div[data-testid="stForm"] input::placeholder {
             color: rgba(255, 255, 255, 0.6) !important;
         }
 
-        /* Botón LOGIN estilo cápsula */
+        /* Botón LOGIN blanco estilo cápsula */
         div[data-testid="stForm"] button[type="submit"] {
-            background: linear-gradient(90deg, #48cae4 0%, #0077b6 100%) !important;
-            color: white !important;
+            background: #ffffff !important;
+            color: #2b3a67 !important;
             border: none !important;
             border-radius: 20px !important;
             padding: 10px 20px !important;
