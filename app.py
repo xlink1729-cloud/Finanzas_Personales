@@ -68,31 +68,25 @@ def mostrar_login():
             padding-bottom: 0rem !important;
         }
 
-        /* Tarjeta principal estilo recuadro translúcido */
-        div[data-testid="stForm"] {
-            background: rgba(255, 255, 255, 0.22);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border-radius: 25px;
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
-            padding: 30px 30px 40px 30px;
-            max-width: 420px;
-            margin: auto;
+        /* 1. Corrección de etiquetas (Usuario / Contraseña en Blanco Brillante) */
+        div[data-testid="stForm"] label, 
+        div[data-testid="stForm"] label p {
+            color: #FFFFFF !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            text-shadow: 0px 1px 3px rgba(0, 0, 0, 0.6);
         }
 
-        /* Estilo para las etiquetas de los inputs */
-        div[data-testid="stForm"] label {
-            color: #ffffff !important;
-            font-weight: 600;
+        /* 2. Color del icono del ojo/revelar contraseña */
+        div[data-testid="stForm"] button[aria-label="Show password"] svg,
+        div[data-testid="stForm"] button[aria-label="Hide password"] svg {
+            fill: #FFFFFF !important;
         }
 
-        /* Estilo de las cajas de texto */
-        div[data-testid="stForm"] input {
-            background-color: rgba(43, 67, 99, 0.65) !important;
-            color: #ffffff !important;
-            border: 1px solid rgba(255, 255, 255, 0.2) !important;
-            border-radius: 8px !important;
+        /* 3. Borde al hacer clic/focus en las cajas de texto */
+        div[data-testid="stForm"] input:focus {
+            border-color: #48cae4 !important;
+            box-shadow: 0 0 8px rgba(72, 202, 228, 0.5) !important;
         }
         
         div[data-testid="stForm"] input::placeholder {
