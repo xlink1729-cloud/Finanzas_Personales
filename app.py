@@ -305,6 +305,7 @@ with tab_flujo:
         if tipo == "Ingreso":
             categorias_dinamicas = [
                 "Nómina / Sueldo Quincenal", 
+                "Rendimientos de Inversión (Nu/CETES/Finsus)",
                 "Retiro de Inversión a Débito", 
                 "Ventas / Ingresos Extra", 
                 "Otros Ingresos"
@@ -317,7 +318,7 @@ with tab_flujo:
         else:
             categorias_dinamicas = [
                 "Pago TDC (Tarjeta de Crédito)", 
-                "Aportación a Inversión (Enviado a CETES/Fintual)",
+                "Aportación a Inversión (Enviado a CETES/Fintual/Nu/Finsus)",
                 "Alimentación / Súper", 
                 "Vivienda / Servicios", 
                 "Transporte / Gasolina", 
@@ -339,16 +340,53 @@ with tab_flujo:
                 fecha = st.date_input("Fecha de Operación", obtener_fecha_local(), key="fecha_flujo")
 
             with col3:
-                descripcion_user = st.text_input(
-                    "Descripción / Detalle", 
-                    placeholder="Ej. Depósito nómina, Cena, Súper, etc.", 
-                    max_chars=120
-                )
+                # CAMPO DINÁMICO: Si es inversión, pide la Tasa Anual %
+                tasa_anual = 0.0
+                if "Inversión" in categoria:
+                    tasa_anual = st.number_input(
+                        "Tasa de Rendimiento Anual (%)", 
+                        min_value=0.0, 
+                        max_value=100.0, 
+                        step=0.1, 
+                        format="%.2f",
+                        help="Tasa % que te da la plataforma (Ej: 13.50 para Nu, 11.10 para CETES)"
+                    )
+                else:
+                    st.text_input(
+                        "Descripción / Detalle", 
+                        placeholder="Ej. Cena, Súper, etc.", 
+                        max_chars=120,
+                        key="input_desc_normal"
+                    )
+
+                # Si es inversión, la descripción se pide abajo o se automatiza para no apretar el formulario
+                if "Inversión" in categoria:
+                    descripcion_user = st.text_input(
+                        "Plataforma / Detalle", 
+                        placeholder="Ej. Cajita Nu, CETES 28 días, Finsus, etc.", 
+                        max_chars=120,
+                        key="input_desc_inv"
+                    )
+                else:
+                    descripcion_user = st.session_state.get("input_desc_normal", "")
+
                 submit = st.form_submit_button("💾 Guardar Registro", use_container_width=True)
 
+            # Cálculo visual rápido si se ingresa rendimiento
+            if "Inversión" in categoria and monto > 0 and tasa_anual > 0:
+                ganancia_anual = monto * (tasa_anual / 100)
+                ganancia_mensual = ganancia_anual / 12
+                st.info(f"📈 **Proyección:** Este monto te generará aprox. **${ganancia_mensual:,.2f} MXN/mes** (${ganancia_anual:,.2f} MXN/año) al {tasa_anual}% de rendimiento.")
+
             if submit:
-                desc_final = f"[{metodo_pago}] {descripcion_user}".strip()
-                if guardar_movimiento(tipo, monto, categoria, desc_final, fecha, USER_ID):
+                # Si se ingresó una tasa, la guardamos en la descripción o pasamos al backend
+                if tasa_anual > 0:
+                    desc_final = f"[{metodo_pago}] [{tasa_anual}% Anual] {descripcion_user}".strip()
+                else:
+                    desc_final = f"[{metodo_pago}] {descripcion_user}".strip()
+                
+                # Pasar 'tasa_anual' a la función de BD
+                if guardar_movimiento(tipo, monto, categoria, desc_final, fecha, USER_ID, tasa_anual=tasa_anual):
                     st.success(f"✅ {tipo} ({categoria}) registrado con éxito.")
                     st.rerun()
 
