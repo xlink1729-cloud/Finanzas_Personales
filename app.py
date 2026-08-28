@@ -284,7 +284,7 @@ def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fe
 # =============================================================================
 st.title("💰 Control de Finanzas e Inversiones")
 
-tab_flujo, tab_ahorros, tab_efectivo, tab_presupuesto = st.tabs([
+tab_flujo, tab_ahorros, tab_presupuesto, tab_efectivo = st.tabs([
     "💵 Flujo Quincenal y Nómina", 
     "📈 Portafolio de Inversiones (CETES, Fintual)",
     "📊 Presupuesto Mensual (Regla 50 / 30 / 20)",
