@@ -6,6 +6,7 @@ import re
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import plotly.express as px
+import hashlib
 
 # =============================================================================
 # ZONA HORARIA LOCAL (MÉXICO)
@@ -36,20 +37,30 @@ def generar_hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def verificar_password(password: str, hashed_password: str) -> bool:
-    """Verifica la contraseña ingresada contra el hash guardado (soporta bcrypt y texto plano)."""
+    """
+    Verifica la contraseña ingresada soportando:
+    1. Bcrypt ($2a$, $2b$)
+    2. SHA-256 (64 caracteres)
+    3. Texto plano (Retrocompatibilidad)
+    """
     if not hashed_password:
         return False
         
     hashed_password = hashed_password.strip()
     
-    # 1. Intento de verificación con Bcrypt
+    # 1. Verificación con Bcrypt
     if hashed_password.startswith("$2a$") or hashed_password.startswith("$2b$"):
         try:
             return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
         except Exception:
             return False
             
-    # 2. Retrocompatibilidad: Si el usuario fue creado antes sin Bcrypt (texto plano)
+    # 2. Verificación con SHA-256 (Hashes de 64 caracteres de la versión anterior)
+    if len(hashed_password) == 64 and not hashed_password.startswith("$"):
+        hash_ingresado = hashlib.sha256(password.encode('utf-8')).hexdigest()
+        return hash_ingresado.lower() == hashed_password.lower()
+            
+    # 3. Verificación con Texto Plano
     return password == hashed_password
 
 def validar_usuario_db(username, password):
