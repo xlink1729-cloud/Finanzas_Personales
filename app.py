@@ -36,12 +36,21 @@ def generar_hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def verificar_password(password: str, hashed_password: str) -> bool:
-    """Verifica la contraseña ingresada contra el hash guardado."""
-    try:
-        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
-    except Exception:
-        # Retrocompatibilidad por si había contraseñas previas almacenadas en texto plano
-        return password == hashed_password
+    """Verifica la contraseña ingresada contra el hash guardado (soporta bcrypt y texto plano)."""
+    if not hashed_password:
+        return False
+        
+    hashed_password = hashed_password.strip()
+    
+    # 1. Intento de verificación con Bcrypt
+    if hashed_password.startswith("$2a$") or hashed_password.startswith("$2b$"):
+        try:
+            return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+        except Exception:
+            return False
+            
+    # 2. Retrocompatibilidad: Si el usuario fue creado antes sin Bcrypt (texto plano)
+    return password == hashed_password
 
 def validar_usuario_db(username, password):
     conn = None
@@ -67,7 +76,7 @@ def validar_usuario_db(username, password):
         if conn:
             conn.close()
 
-def registrar_usuario_db(username, password):
+def registrar_usuario_db(username, password, nombre):
     """Inserta un nuevo usuario en la base de datos PostgreSQL/Neon."""
     conn = None
     try:
@@ -79,11 +88,11 @@ def registrar_usuario_db(username, password):
         if cur.fetchone():
             return False, "El nombre de usuario ya existe. Intenta con otro."
         
-        # Encriptar y guardar
+        # Encriptar y guardar incluyendo el campo 'nombre'
         pass_hash = generar_hash_password(password)
         cur.execute(
-            "INSERT INTO usuarios (username, password_hash) VALUES (%s, %s);",
-            (username.strip(), pass_hash)
+            "INSERT INTO usuarios (username, nombre, password_hash) VALUES (%s, %s, %s);",
+            (username.strip(), nombre.strip(), pass_hash)
         )
         conn.commit()
         cur.close()
@@ -96,7 +105,7 @@ def registrar_usuario_db(username, password):
     finally:
         if conn:
             conn.close()
-
+            
 def mostrar_login():
     st.markdown("""
         <style>
@@ -203,20 +212,21 @@ def mostrar_login():
                             st.error("Usuario o contraseña incorrectos.")
 
             with tab_reg:
-                usuario_reg = st.text_input("👤 Nuevo Usuario", key="reg_user", placeholder="Crea un nombre de usuario")
+                nombre_reg = st.text_input("👤 Tu Nombre", key="reg_nombre", placeholder="Ej. Juan Pérez")
+                usuario_reg = st.text_input("👤 Usuario", key="reg_user", placeholder="Crea un nombre de usuario")
                 pass_reg1 = st.text_input("🔒 Contraseña", type="password", key="reg_pass1", placeholder="Mínimo 6 caracteres")
                 pass_reg2 = st.text_input("🔒 Confirmar Contraseña", type="password", key="reg_pass2", placeholder="Repite tu contraseña")
                 submit_reg = st.form_submit_button("CREAR CUENTA", use_container_width=True)
                 
                 if submit_reg:
-                    if not usuario_reg or not pass_reg1 or not pass_reg2:
+                    if not nombre_reg or not usuario_reg or not pass_reg1 or not pass_reg2:
                         st.warning("Por favor completa todos los campos.")
                     elif pass_reg1 != pass_reg2:
                         st.error("Las contraseñas no coinciden.")
                     elif len(pass_reg1) < 6:
                         st.warning("La contraseña debe tener al menos 6 caracteres.")
                     else:
-                        exito, msj = registrar_usuario_db(usuario_reg, pass_reg1)
+                        exito, msj = registrar_usuario_db(usuario_reg, pass_reg1, nombre_reg)
                         if exito:
                             st.success(msj)
                         else:
