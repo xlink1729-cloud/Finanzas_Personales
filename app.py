@@ -305,7 +305,6 @@ with tab_flujo:
         if tipo == "Ingreso":
             categorias_dinamicas = [
                 "Nómina / Sueldo Quincenal", 
-                "Rendimientos de Inversión (Nu/CETES/Finsus)",
                 "Retiro de Inversión a Débito", 
                 "Ventas / Ingresos Extra", 
                 "Otros Ingresos"
@@ -318,7 +317,7 @@ with tab_flujo:
         else:
             categorias_dinamicas = [
                 "Pago TDC (Tarjeta de Crédito)", 
-                "Aportación a Inversión (Enviado a CETES/Fintual/Nu/Finsus)",
+                "Aportación a Inversión (Enviado a CETES/Fintual)",
                 "Alimentación / Súper", 
                 "Vivienda / Servicios", 
                 "Transporte / Gasolina", 
@@ -340,53 +339,16 @@ with tab_flujo:
                 fecha = st.date_input("Fecha de Operación", obtener_fecha_local(), key="fecha_flujo")
 
             with col3:
-                # CAMPO DINÁMICO: Si es inversión, pide la Tasa Anual %
-                tasa_anual = 0.0
-                if "Inversión" in categoria:
-                    tasa_anual = st.number_input(
-                        "Tasa de Rendimiento Anual (%)", 
-                        min_value=0.0, 
-                        max_value=100.0, 
-                        step=0.1, 
-                        format="%.2f",
-                        help="Tasa % que te da la plataforma (Ej: 13.50 para Nu, 11.10 para CETES)"
-                    )
-                else:
-                    st.text_input(
-                        "Descripción / Detalle", 
-                        placeholder="Ej. Cena, Súper, etc.", 
-                        max_chars=120,
-                        key="input_desc_normal"
-                    )
-
-                # Si es inversión, la descripción se pide abajo o se automatiza para no apretar el formulario
-                if "Inversión" in categoria:
-                    descripcion_user = st.text_input(
-                        "Plataforma / Detalle", 
-                        placeholder="Ej. Cajita Nu, CETES 28 días, Finsus, etc.", 
-                        max_chars=120,
-                        key="input_desc_inv"
-                    )
-                else:
-                    descripcion_user = st.session_state.get("input_desc_normal", "")
-
+                descripcion_user = st.text_input(
+                    "Descripción / Detalle", 
+                    placeholder="Ej. Depósito nómina, Cena, Súper, etc.", 
+                    max_chars=120
+                )
                 submit = st.form_submit_button("💾 Guardar Registro", use_container_width=True)
 
-            # Cálculo visual rápido si se ingresa rendimiento
-            if "Inversión" in categoria and monto > 0 and tasa_anual > 0:
-                ganancia_anual = monto * (tasa_anual / 100)
-                ganancia_mensual = ganancia_anual / 12
-                st.info(f"📈 **Proyección:** Este monto te generará aprox. **${ganancia_mensual:,.2f} MXN/mes** (${ganancia_anual:,.2f} MXN/año) al {tasa_anual}% de rendimiento.")
-
             if submit:
-                # Si se ingresó una tasa, la guardamos en la descripción o pasamos al backend
-                if tasa_anual > 0:
-                    desc_final = f"[{metodo_pago}] [{tasa_anual}% Anual] {descripcion_user}".strip()
-                else:
-                    desc_final = f"[{metodo_pago}] {descripcion_user}".strip()
-                
-                # Pasar 'tasa_anual' a la función de BD
-                if guardar_movimiento(tipo, monto, categoria, desc_final, fecha, USER_ID, tasa_anual=tasa_anual):
+                desc_final = f"[{metodo_pago}] {descripcion_user}".strip()
+                if guardar_movimiento(tipo, monto, categoria, desc_final, fecha, USER_ID):
                     st.success(f"✅ {tipo} ({categoria}) registrado con éxito.")
                     st.rerun()
 
@@ -696,6 +658,8 @@ with tab_flujo:
 # =============================================================================
 # PESTAÑA 2: PORTAFOLIO DE INVERSIONES
 # =============================================================================
+import re
+
 with tab_ahorros:
     st.markdown("### 📈 Portafolio de Inversiones (CETES, Fintual, etc.)")
     st.caption("Esta sección analiza únicamente tus cuentas de inversión y su rendimiento.")
@@ -709,9 +673,10 @@ with tab_ahorros:
             with col_inv1:
                 plataforma = st.selectbox(
                     "Plataforma / Fondo",
-                    ["Fintual", "CETES Directo", "Nu (Cajita)", "Mercado Pago / Fondo", "GBM / Acciones", "Fondo de Emergencia", "Otra Plataforma"]
+                    ["Nu (Cajita)", "CETES Directo", "Finsus", "Fintual", "Mercado Pago / Fondo", "GBM / Acciones", "Fondo de Emergencia", "Otra Plataforma"]
                 )
                 monto_inv = st.number_input("Saldo Total Actual ($)", min_value=0.01, step=100.0, format="%.2f")
+                tasa_anual_inv = st.number_input("Tasa de Rendimiento Anual (%)", min_value=0.0, max_value=100.0, value=0.0, step=0.1, format="%.2f")
 
             with col_inv2:
                 tipo_operacion = st.selectbox(
@@ -722,14 +687,20 @@ with tab_ahorros:
 
             with col_inv3:
                 notas_inv = st.text_input("Notas / Detalle", placeholder="Ej. Saldo al revisar la app hoy")
+                
+                # Cálculo rápido visual en la esquina
+                ganancia_mensual_prev = (monto_inv * (tasa_anual_inv / 100)) / 12
+                st.caption(f"💡 **Rendimiento est.:** +${ganancia_mensual_prev:,.2f} MXN/mes")
+                
                 submit_inv = st.form_submit_button("💾 Guardar y Actualizar Inversiones", use_container_width=True)
 
             if submit_inv:
-                desc_completa = f"[{plataforma}] {tipo_operacion}: {notas_inv}".strip()
+                # Estructuramos la descripción para codificar la tasa dentro sin cambiar la BD
+                desc_completa = f"[{plataforma} | Tasa: {tasa_anual_inv:.2f}%] {tipo_operacion}: {notas_inv}".strip()
                 categoria_inv = f"Inversión - {plataforma}"
                 
                 if guardar_movimiento("Inversion", monto_inv, categoria_inv, desc_completa, fecha_inv, current_user_id):
-                    st.success(f"✅ Portafolio de {plataforma} actualizado.")
+                    st.success(f"✅ Portafolio de {plataforma} actualizado con tasa del {tasa_anual_inv:.2f}%.")
                     st.rerun()
 
     st.markdown("---")
@@ -737,7 +708,7 @@ with tab_ahorros:
     df_raw = obtener_movimientos(current_user_id)
     
     if not df_raw.empty:
-        plataformas_conocidas = ["fintual", "cetes", "nu", "mercado pago", "gbm", "emergencia"]
+        plataformas_conocidas = ["fintual", "cetes", "nu", "finsus", "mercado pago", "gbm", "emergencia"]
         mask_inv = (
             df_raw['categoria'].str.contains("inversi", case=False, na=False) |
             df_raw['tipo'].str.contains("inversi", case=False, na=False) |
@@ -747,18 +718,33 @@ with tab_ahorros:
         df_inversiones = df_raw[mask_inv].copy()
         
         if not df_inversiones.empty:
-            def extraer_plataforma(row):
+            # Función para extraer Plataforma y Tasa Anual desde la descripción o categoría
+            def extraer_datos_inv(row):
                 cat = str(row['categoria'])
-                if "Inversión - " in cat:
-                    return cat.replace("Inversión - ", "").strip()
-                elif "Inversion - " in cat:
-                    return cat.replace("Inversion - ", "").strip()
                 desc = str(row['descripcion'])
-                if desc.startswith("[") and "]" in desc:
-                    return desc[1:desc.find("]")]
-                return "General"
+                
+                # 1. Extraer Plataforma
+                if "Inversión - " in cat:
+                    plat = cat.replace("Inversión - ", "").strip()
+                elif "Inversion - " in cat:
+                    plat = cat.replace("Inversion - ", "").strip()
+                elif desc.startswith("[") and "]" in desc:
+                    plat = desc[1:desc.find("]")].split("|")[0].strip()
+                else:
+                    plat = "General"
+                
+                # 2. Extraer Tasa % usando Expresiones Regulares
+                tasa = 0.0
+                match_tasa = re.search(r"Tasa:\s*([\d\.]+)%", desc)
+                if match_tasa:
+                    try:
+                        tasa = float(match_tasa.group(1))
+                    except ValueError:
+                        tasa = 0.0
+                        
+                return pd.Series([plat, tasa], index=['Plataforma', 'Tasa (%)'])
 
-            df_inversiones['Plataforma'] = df_inversiones.apply(extraer_plataforma, axis=1)
+            df_inversiones[['Plataforma', 'Tasa (%)']] = df_inversiones.apply(extraer_datos_inv, axis=1)
             df_inversiones['fecha'] = pd.to_datetime(df_inversiones['fecha'])
             df_inversiones = df_inversiones.sort_values(by=['Plataforma', 'fecha', 'id'])
 
@@ -766,8 +752,14 @@ with tab_ahorros:
 
             for plat, group in df_inversiones.groupby('Plataforma'):
                 ultimos_registros = group.tail(2)
-                saldo_actual = ultimos_registros.iloc[-1]['monto']
+                registro_actual = ultimos_registros.iloc[-1]
+                saldo_actual = registro_actual['monto']
+                tasa_actual = registro_actual['Tasa (%)']
                 
+                # Cálculos de rendimiento
+                ganancia_anual = saldo_actual * (tasa_actual / 100)
+                ganancia_mensual = ganancia_anual / 12
+
                 if len(ultimos_registros) > 1:
                     saldo_anterior = ultimos_registros.iloc[-2]['monto']
                     variacion = saldo_actual - saldo_anterior
@@ -779,6 +771,8 @@ with tab_ahorros:
                 resumen_filas.append({
                     "Plataforma": plat,
                     "Saldo Actual": saldo_actual,
+                    "Tasa Anual (%)": tasa_actual,
+                    "Ganancia Est. / Mes": ganancia_mensual,
                     "Variación ($)": variacion,
                     "Variación (%)": porcentaje_var
                 })
@@ -786,6 +780,7 @@ with tab_ahorros:
             df_resumen_inv = pd.DataFrame(resumen_filas)
             total_inversiones = df_resumen_inv['Saldo Actual'].sum()
             total_variacion = df_resumen_inv['Variación ($)'].sum()
+            total_rendimiento_mensual = df_resumen_inv['Ganancia Est. / Mes'].sum()
 
             METAS_PLATAFORMA = {
                 "Fintual": 10000.0,
@@ -798,21 +793,28 @@ with tab_ahorros:
             progreso_pct = min(100.0, (total_inversiones / META_INVERSION_TOTAL) * 100) if META_INVERSION_TOTAL > 0 else 0
 
             st.markdown("### 📊 Valor Total del Portafolio de Inversión")
-            col_met1, col_met2, col_met3 = st.columns(3)
+            col_met1, col_met2, col_met3, col_met4 = st.columns(4)
             
             col_met1.metric("Patrimonio Invertido Total", fmt_monto(total_inversiones))
             
             if ocultar_saldos:
-                col_met2.metric("Última Variación", "$ ••••••")
-                col_met3.metric("Faltante p/ Meta Total", "$ ••••••", f"{progreso_pct:.1f}% Alcanzado")
+                col_met2.metric("Rendimiento Mensual Est.", "$ ••••••")
+                col_met3.metric("Última Variación", "$ ••••••")
+                col_met4.metric("Faltante p/ Meta Total", "$ ••••••", f"{progreso_pct:.1f}% Alcanzado")
             else:
                 col_met2.metric(
+                    "Rendimiento Mensual Est.", 
+                    f"${total_rendimiento_mensual:,.2f}", 
+                    delta=f"+${total_rendimiento_mensual * 12:,.2f}/año",
+                    delta_color="normal"
+                )
+                col_met3.metric(
                     "Última Variación", 
                     f"${total_variacion:,.2f}", 
                     delta=f"${total_variacion:,.2f}",
                     delta_color="normal"
                 )
-                col_met3.metric("Faltante p/ Meta Total", f"${faltante_meta:,.2f}", f"{progreso_pct:.1f}% Alcanzado")
+                col_met4.metric("Faltante p/ Meta Total", f"${faltante_meta:,.2f}", f"{progreso_pct:.1f}% Alcanzado")
 
             st.caption(f"Progreso global hacia la meta de **{fmt_monto(META_INVERSION_TOTAL)}**")
             st.progress(progreso_pct / 100.0)
@@ -824,10 +826,11 @@ with tab_ahorros:
                 with cols_m[idx]:
                     row_plat = df_resumen_inv[df_resumen_inv['Plataforma'].str.contains(plat_nombre.split()[0], case=False, na=False)]
                     saldo_plat = row_plat['Saldo Actual'].values[0] if not row_plat.empty else 0.0
+                    tasa_plat = row_plat['Tasa Anual (%)'].values[0] if not row_plat.empty else 0.0
                     
                     pct_plat = min(100.0, (saldo_plat / meta_monto) * 100) if meta_monto > 0 else 0
                     
-                    st.markdown(f"**{plat_nombre}**")
+                    st.markdown(f"**{plat_nombre}** `{tasa_plat:.2f}%`")
                     if ocultar_saldos:
                         st.caption(f"Meta: {fmt_monto(meta_monto)}")
                         st.progress(pct_plat / 100.0)
@@ -846,11 +849,13 @@ with tab_ahorros:
                 st.bar_chart(df_resumen_inv, x='Plataforma', y='Saldo Actual', color="#29B6F6")
 
             with col_ah2:
-                st.subheader("Saldos y Variación por Instrumento")
+                st.subheader("Saldos y Rendimiento por Instrumento")
                 df_mostrar_resumen = df_resumen_inv.copy()
 
                 if ocultar_saldos:
                     df_mostrar_resumen['Saldo Actual'] = "$ ••••••"
+                    df_mostrar_resumen['Tasa Anual (%)'] = "••• %"
+                    df_mostrar_resumen['Ganancia Est. / Mes'] = "$ ••••••"
                     df_mostrar_resumen['Variación ($)'] = "$ ••••••"
                     df_mostrar_resumen['Variación (%)'] = "••• %"
                     st.dataframe(df_mostrar_resumen, use_container_width=True, hide_index=True)
@@ -860,6 +865,8 @@ with tab_ahorros:
                         column_config={
                             "Plataforma": "Fondo / Plataforma",
                             "Saldo Actual": st.column_config.NumberColumn("Saldo Actual", format="$%.2f"),
+                            "Tasa Anual (%)": st.column_config.NumberColumn("Tasa Anual", format="%.2f%%"),
+                            "Ganancia Est. / Mes": st.column_config.NumberColumn("Est. Ganancia/Mes", format="$%.2f"),
                             "Variación ($)": st.column_config.NumberColumn("Ganancia / Pérdida ($)", format="$%.2f"),
                             "Variación (%)": st.column_config.NumberColumn("Cambio (%)", format="%.2f%%")
                         },
@@ -870,13 +877,14 @@ with tab_ahorros:
             st.markdown("---")
 
             st.markdown("#### 📋 Historial de Registros de Inversión")
-            df_inv_disp = df_inversiones[['id', 'fecha', 'Plataforma', 'monto', 'descripcion']].sort_values(by='fecha', ascending=False).copy()
+            df_inv_disp = df_inversiones[['id', 'fecha', 'Plataforma', 'Tasa (%)', 'monto', 'descripcion']].sort_values(by='fecha', ascending=False).copy()
             df_inv_disp['fecha_str'] = df_inv_disp['fecha'].dt.strftime('%Y-%m-%d')
             
             config_inv_cols = {
                 "id": st.column_config.NumberColumn("ID", format="%d"),
                 "fecha_str": "Fecha",
                 "Plataforma": "Plataforma",
+                "Tasa (%)": st.column_config.NumberColumn("Tasa (%)", format="%.2f%%"),
                 "monto": st.column_config.NumberColumn("Saldo Registrado", format="$%.2f"),
                 "descripcion": "Notas"
             }
@@ -884,10 +892,10 @@ with tab_ahorros:
             if ocultar_saldos:
                 df_inv_disp_show = df_inv_disp.copy()
                 df_inv_disp_show['monto'] = "••••••"
-                st.dataframe(df_inv_disp_show[['id', 'fecha_str', 'Plataforma', 'monto', 'descripcion']], column_config=config_inv_cols, use_container_width=True, hide_index=True)
+                st.dataframe(df_inv_disp_show[['id', 'fecha_str', 'Plataforma', 'Tasa (%)', 'monto', 'descripcion']], column_config=config_inv_cols, use_container_width=True, hide_index=True)
             else:
                 st.dataframe(
-                    df_inv_disp[['id', 'fecha_str', 'Plataforma', 'monto', 'descripcion']],
+                    df_inv_disp[['id', 'fecha_str', 'Plataforma', 'Tasa (%)', 'monto', 'descripcion']],
                     column_config=config_inv_cols,
                     use_container_width=True,
                     hide_index=True
@@ -911,11 +919,14 @@ with tab_ahorros:
                         with st.form("form_edit_inv"):
                             ei_fecha = st.date_input("Fecha Correcta", datos_inv_reg['fecha'].date())
                             ei_monto = st.number_input("Saldo Correcto ($)", value=float(datos_inv_reg['monto']), min_value=0.01, step=100.0, format="%.2f")
+                            ei_tasa = st.number_input("Tasa Anual Correcta (%)", value=float(datos_inv_reg['Tasa (%)']), min_value=0.0, max_value=100.0, step=0.1, format="%.2f")
                             ei_desc = st.text_input("Notas", value=datos_inv_reg['descripcion'])
                             
                             btn_act_inv = st.form_submit_button("💾 Guardar Cambios en Inversión")
                             if btn_act_inv:
-                                if actualizar_movimiento(id_inv_sel, "Inversion", ei_monto, f"Inversión - {datos_inv_reg['Plataforma']}", ei_desc, ei_fecha, current_user_id):
+                                # Preservar el formato de la etiqueta al editar
+                                desc_editada = f"[{datos_inv_reg['Plataforma']} | Tasa: {ei_tasa:.2f}%] {ei_desc}".strip()
+                                if actualizar_movimiento(id_inv_sel, "Inversion", ei_monto, f"Inversión - {datos_inv_reg['Plataforma']}", desc_editada, ei_fecha, current_user_id):
                                     st.success("✅ Registro de inversión actualizado.")
                                     st.rerun()
 
