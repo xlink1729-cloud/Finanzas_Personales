@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import psycopg2
-import hashlib
+import bcrypt
+import re
 from datetime import datetime, date
 from zoneinfo import ZoneInfo
 import plotly.express as px
@@ -24,23 +25,39 @@ st.set_page_config(
 )
 
 # =============================================================================
-# 2. CONTROL DE ACCESO Y AUTENTICACIÓN MULTIUSUARIO
+# 2. CONTROL DE ACCESO Y AUTENTICACIÓN MULTIUSUARIO (BCRYPT)
 # =============================================================================
 def get_connection():
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
+def generar_hash_password(password: str) -> str:
+    """Genera un hash seguro para la contraseña."""
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+
+def verificar_password(password: str, hashed_password: str) -> bool:
+    """Verifica la contraseña ingresada contra el hash guardado."""
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        # Retrocompatibilidad por si había contraseñas previas almacenadas en texto plano
+        return password == hashed_password
+
 def validar_usuario_db(username, password):
-    hash_ingresado = hashlib.sha256(password.encode()).hexdigest()
     conn = None
     try:
         conn = get_connection()
         with conn.cursor() as cur:
             cur.execute(
-                "SELECT id, username FROM usuarios WHERE username = %s AND password_hash = %s",
-                (username, hash_ingresado)
+                "SELECT id, username, password_hash FROM usuarios WHERE LOWER(username) = %s",
+                (username.lower().strip(),)
             )
             user = cur.fetchone()
-            return user
+            if user:
+                user_id, user_name, pass_hash = user
+                if verificar_password(password, pass_hash):
+                    return (user_id, user_name)
+            return None
     except Exception as e:
         if conn:
             conn.rollback()
@@ -50,23 +67,49 @@ def validar_usuario_db(username, password):
         if conn:
             conn.close()
 
+def registrar_usuario_db(username, password):
+    """Inserta un nuevo usuario en la base de datos PostgreSQL/Neon."""
+    conn = None
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        
+        # Verificar si el usuario ya existe
+        cur.execute("SELECT id FROM usuarios WHERE LOWER(username) = %s;", (username.lower().strip(),))
+        if cur.fetchone():
+            return False, "El nombre de usuario ya existe. Intenta con otro."
+        
+        # Encriptar y guardar
+        pass_hash = generar_hash_password(password)
+        cur.execute(
+            "INSERT INTO usuarios (username, password_hash) VALUES (%s, %s);",
+            (username.strip(), pass_hash)
+        )
+        conn.commit()
+        cur.close()
+        return True, "¡Cuenta creada con éxito! Ahora puedes iniciar sesión."
+    
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return False, f"Error al registrar usuario: {e}"
+    finally:
+        if conn:
+            conn.close()
+
 def mostrar_login():
-    # Estilos CSS con Glassmorphism y margen superior reducido
     st.markdown("""
         <style>
-        /* Fondo general con degradado */
         .stApp {
             background: linear-gradient(135deg, #2b3a67 0%, #496a81 35%, #669bbc 70%, #8c7a6b 100%);
         }
-        
-        /* Ocultar barra superior de Streamlit */
         header {visibility: hidden;}
 
-        /* REDUCIR ESPACIO SUPERIOR DE LA PÁGINA (Sube todo el contenido) */
         .block-container {
             padding-top: 1rem !important;
             padding-bottom: 0rem !important;
-        /* Tarjeta principal estilo recuadro translúcido */
+        }
+
         div[data-testid="stForm"] {
             background: rgba(255, 255, 255, 0.22);
             backdrop-filter: blur(16px);
@@ -74,19 +117,17 @@ def mostrar_login():
             border-radius: 25px;
             border: 1px solid rgba(255, 255, 255, 0.3);
             box-shadow: 0 15px 35px rgba(0, 0, 0, 0.25);
-            padding: 30px 30px 40px 30px;
-            max-width: 420px;
+            padding: 25px 30px 35px 30px;
+            max-width: 440px;
             margin: auto;
         }
 
-        /* Etiquetas (Usuario / Contraseña) */
         div[data-testid="stForm"] label,
         div[data-testid="stForm"] label p {
             color: #ffffff !important;
             font-weight: 600 !important;
         }
 
-        /* Cajas de texto oscuras translúcidas */
         div[data-testid="stForm"] input {
             background-color: rgba(43, 67, 99, 0.65) !important;
             color: #ffffff !important;
@@ -94,12 +135,10 @@ def mostrar_login():
             border-radius: 8px !important;
         }
         
-        /* Placeholder en blanco suave */
         div[data-testid="stForm"] input::placeholder {
             color: rgba(255, 255, 255, 0.6) !important;
         }
 
-        /* Botón LOGIN blanco estilo cápsula */
         div[data-testid="stForm"] button[type="submit"] {
             background: #ffffff !important;
             color: #2b3a67 !important;
@@ -117,14 +156,22 @@ def mostrar_login():
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(0,0,0,0.3) !important;
         }
+
+        /* Estilo para las pestañas dentro del login */
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 10px;
+            justify-content: center;
+        }
+        .stTabs [data-baseweb="tab"] {
+            color: white !important;
+            font-weight: 600;
+        }
         </style>
     """, unsafe_allow_html=True)
 
-    # Centrado en pantalla usando columnas
     col1, col2, col3 = st.columns([1, 2, 1])
 
     with col2:
-        # 1. Logo centrado afuera de la tarjeta
         col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
         with col_img2:
             try:
@@ -132,24 +179,48 @@ def mostrar_login():
             except Exception:
                 pass
 
-        # 2. Formulario de acceso dentro de la tarjeta
-        with st.form("form_login"):
-            st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 20px; font-weight: 700;'>LOGIN</h2>", unsafe_allow_html=True)
+        with st.form("form_auth"):
+            st.markdown("<h2 style='text-align: center; color: white; margin-bottom: 10px; font-weight: 700;'>FINSMART</h2>", unsafe_allow_html=True)
             
-            usuario = st.text_input("👤 Usuario", placeholder="Ingresa tu usuario")
-            contrasena = st.text_input("🔒 Contraseña", type="password", placeholder="Ingresa tu contraseña")
+            tab_log, tab_reg = st.tabs(["🔑 Iniciar Sesión", "📝 Crear Cuenta"])
             
-            submit = st.form_submit_button("LOGIN", use_container_width=True)
-            
-            if submit:
-                user_data = validar_usuario_db(usuario, contrasena)
-                if user_data:
-                    st.session_state["autenticado"] = True
-                    st.session_state["user_id"] = user_data[0]
-                    st.session_state["username"] = user_data[1]
-                    st.rerun()
-                else:
-                    st.error("Usuario o contraseña incorrectos.")
+            with tab_log:
+                usuario_log = st.text_input("👤 Usuario", key="log_user", placeholder="Ingresa tu usuario")
+                pass_log = st.text_input("🔒 Contraseña", type="password", key="log_pass", placeholder="Ingresa tu contraseña")
+                submit_log = st.form_submit_button("LOGIN", use_container_width=True)
+                
+                if submit_log:
+                    if not usuario_log or not pass_log:
+                        st.warning("Completa todos los campos.")
+                    else:
+                        user_data = validar_usuario_db(usuario_log, pass_log)
+                        if user_data:
+                            st.session_state["autenticado"] = True
+                            st.session_state["user_id"] = user_data[0]
+                            st.session_state["username"] = user_data[1]
+                            st.rerun()
+                        else:
+                            st.error("Usuario o contraseña incorrectos.")
+
+            with tab_reg:
+                usuario_reg = st.text_input("👤 Nuevo Usuario", key="reg_user", placeholder="Crea un nombre de usuario")
+                pass_reg1 = st.text_input("🔒 Contraseña", type="password", key="reg_pass1", placeholder="Mínimo 6 caracteres")
+                pass_reg2 = st.text_input("🔒 Confirmar Contraseña", type="password", key="reg_pass2", placeholder="Repite tu contraseña")
+                submit_reg = st.form_submit_button("CREAR CUENTA", use_container_width=True)
+                
+                if submit_reg:
+                    if not usuario_reg or not pass_reg1 or not pass_reg2:
+                        st.warning("Por favor completa todos los campos.")
+                    elif pass_reg1 != pass_reg2:
+                        st.error("Las contraseñas no coinciden.")
+                    elif len(pass_reg1) < 6:
+                        st.warning("La contraseña debe tener al menos 6 caracteres.")
+                    else:
+                        exito, msj = registrar_usuario_db(usuario_reg, pass_reg1)
+                        if exito:
+                            st.success(msj)
+                        else:
+                            st.error(msj)
 
 # --- CONTROL DE SESIÓN ---
 if "autenticado" not in st.session_state:
@@ -183,6 +254,7 @@ ocultar_saldos = st.sidebar.toggle(
 if st.sidebar.button("Cerrar Sesión"):
     st.session_state["autenticado"] = False
     st.session_state.pop("user_id", None)
+    st.session_state.pop("username", None)
     st.rerun()
 
 def fmt_monto(valor):
@@ -393,10 +465,7 @@ with tab_flujo:
             ingresos_totales_historicos = df_flujo[df_flujo['tipo'] == 'Ingreso']['monto'].sum()
             gastos_debito_historicos = df_flujo[(df_flujo['tipo'] == 'Egreso') & mask_debito_global]['monto'].sum()
             
-            # --- CORRECCIÓN CLAVE AQUÍ ---
             retiros_historicos = df_flujo[df_flujo['tipo'] == 'Retiro']['monto'].sum()
-            
-            # Resta correctamente los retiros de la nómina
             nomina_restante = ingresos_totales_historicos - gastos_debito_historicos - retiros_historicos
 
             nomina_ingresada_ciclo = df_q_actual[df_q_actual['tipo'] == 'Ingreso']['monto'].sum()
@@ -436,7 +505,6 @@ with tab_flujo:
 
             st.markdown("---")
 
-            # ESTRUCTURA DE GASTOS
             st.markdown("### 📈 Distribución de Gastos: Fijos vs. Variables vs. Inversión")
 
             categorias_fijas = [
@@ -659,8 +727,6 @@ with tab_flujo:
 # =============================================================================
 # PESTAÑA 2: PORTAFOLIO DE INVERSIONES
 # =============================================================================
-import re
-
 with tab_ahorros:
     st.markdown("### 📈 Portafolio de Inversiones (CETES, Fintual, etc.)")
     st.caption("Esta sección analiza únicamente tus cuentas de inversión y su rendimiento.")
@@ -689,14 +755,12 @@ with tab_ahorros:
             with col_inv3:
                 notas_inv = st.text_input("Notas / Detalle", placeholder="Ej. Saldo al revisar la app hoy")
                 
-                # Cálculo rápido visual en la esquina
                 ganancia_mensual_prev = (monto_inv * (tasa_anual_inv / 100)) / 12
                 st.caption(f"💡 **Rendimiento est.:** +${ganancia_mensual_prev:,.2f} MXN/mes")
                 
                 submit_inv = st.form_submit_button("💾 Guardar y Actualizar Inversiones", use_container_width=True)
 
             if submit_inv:
-                # Estructuramos la descripción para codificar la tasa dentro sin cambiar la BD
                 desc_completa = f"[{plataforma} | Tasa: {tasa_anual_inv:.2f}%] {tipo_operacion}: {notas_inv}".strip()
                 categoria_inv = f"Inversión - {plataforma}"
                 
@@ -719,12 +783,10 @@ with tab_ahorros:
         df_inversiones = df_raw[mask_inv].copy()
         
         if not df_inversiones.empty:
-            # Función para extraer Plataforma y Tasa Anual desde la descripción o categoría
             def extraer_datos_inv(row):
                 cat = str(row['categoria'])
                 desc = str(row['descripcion'])
                 
-                # 1. Extraer Plataforma
                 if "Inversión - " in cat:
                     plat = cat.replace("Inversión - ", "").strip()
                 elif "Inversion - " in cat:
@@ -734,7 +796,6 @@ with tab_ahorros:
                 else:
                     plat = "General"
                 
-                # 2. Extraer Tasa % usando Expresiones Regulares
                 tasa = 0.0
                 match_tasa = re.search(r"Tasa:\s*([\d\.]+)%", desc)
                 if match_tasa:
@@ -757,7 +818,6 @@ with tab_ahorros:
                 saldo_actual = registro_actual['monto']
                 tasa_actual = registro_actual['Tasa (%)']
                 
-                # Cálculos de rendimiento
                 ganancia_anual = saldo_actual * (tasa_actual / 100)
                 ganancia_mensual = ganancia_anual / 12
 
@@ -925,7 +985,6 @@ with tab_ahorros:
                             
                             btn_act_inv = st.form_submit_button("💾 Guardar Cambios en Inversión")
                             if btn_act_inv:
-                                # Preservar el formato de la etiqueta al editar
                                 desc_editada = f"[{datos_inv_reg['Plataforma']} | Tasa: {ei_tasa:.2f}%] {ei_desc}".strip()
                                 if actualizar_movimiento(id_inv_sel, "Inversion", ei_monto, f"Inversión - {datos_inv_reg['Plataforma']}", desc_editada, ei_fecha, current_user_id):
                                     st.success("✅ Registro de inversión actualizado.")
@@ -944,7 +1003,7 @@ with tab_ahorros:
         st.info("No hay datos registrados aún.")
 
 # =============================================================================
-# PESTAÑA: PRESUPUESTO 50/30/20 & FLUJO QUINCENAL
+# PESTAÑA 3: PRESUPUESTO 50/30/20 & FLUJO QUINCENAL
 # =============================================================================
 with tab_presupuesto:
     st.markdown("### 📊 Presupuesto Mensual (Regla 50 / 30 / 20)")
@@ -953,7 +1012,6 @@ with tab_presupuesto:
     current_user_id = st.session_state.get("user_id")
     df_raw = obtener_movimientos(current_user_id)
 
-    # 1. Configuración de Ingresos del Mes
     with st.expander("⚙️ Configurar Ingreso Mensual Base", expanded=False):
         col_inc1, col_inc2 = st.columns(2)
         with col_inc1:
@@ -964,14 +1022,12 @@ with tab_presupuesto:
         ingreso_mensual_total = ingreso_q1 + ingreso_q2
         st.info(f"💡 **Ingreso Total Estimado del Mes:** {fmt_monto(ingreso_mensual_total)}")
 
-    # 2. Cálculos de la Regla 50/30/20
-    limite_necesidades = ingreso_mensual_total * 0.50  # 50%
-    limite_deseos = ingreso_mensual_total * 0.30       # 30%
-    limite_ahorro = ingreso_mensual_total * 0.20       # 20%
+    limite_necesidades = ingreso_mensual_total * 0.50
+    limite_deseos = ingreso_mensual_total * 0.30
+    limite_ahorro = ingreso_mensual_total * 0.20
 
     st.markdown("---")
 
-    # 3. Métricas Principales del Presupuesto
     col_p1, col_p2, col_p3 = st.columns(3)
     col_p1.metric(
         label="🏠 50% Necesidades / Fijos", 
@@ -991,20 +1047,15 @@ with tab_presupuesto:
 
     st.markdown("---")
 
-    # 4. Obtención de Gastos Reales del Mes en Curso (Excluyendo TDC o analizándolos por categoría)
     if not df_raw.empty:
         df_raw['fecha'] = pd.to_datetime(df_raw['fecha'])
         
-        # Filtrar mes actual
         fecha_actual = obtener_fecha_local()
         df_mes = df_raw[(df_raw['fecha'].dt.month == fecha_actual.month) & (df_raw['fecha'].dt.year == fecha_actual.year)].copy()
 
-        # Separar por categorías/tipos
-        # Filtrar solo gastos o salidas reales de dinero
         mask_gastos = df_mes['tipo'].str.lower().str.contains("gasto|salida|egreso", na=False)
         df_gastos_mes = df_mes[mask_gastos].copy()
 
-        # Clasificación simplificada de gastos reales registrados
         mask_fijos = df_gastos_mes['categoria'].str.lower().str.contains("renta|celular|plan|servicio|luz|agua|despensa", na=False)
         mask_ahorro = df_gastos_mes['tipo'].str.lower().str.contains("inversion|ahorro", na=False) | df_gastos_mes['categoria'].str.lower().str.contains("inversi|ahorro", na=False)
         mask_deseos = ~mask_fijos & ~mask_ahorro
@@ -1018,7 +1069,6 @@ with tab_presupuesto:
         gasto_deseos_real = 0.0
         gasto_ahorro_real = 0.0
 
-    # 5. Barras de Progreso de Ejecución del Presupuesto
     st.markdown("#### 📈 Ejecución de tu Presupuesto este Mes")
 
     col_b1, col_b2, col_b3 = st.columns(3)
@@ -1053,7 +1103,6 @@ with tab_presupuesto:
 
     st.markdown("---")
 
-    # 6. Módulo Especial: Balance de Flujo Quincenal
     st.markdown("### 🗓️ Estrategia de Flujo de Caja Quincenal")
     st.caption("Nivelación de compromisos entre la 1.ª y 2.ª Quincena.")
 
@@ -1087,7 +1136,7 @@ with tab_presupuesto:
             st.success("✅ Si apartaste el 50% de la renta durante la Q1, esta quincena fluirá con la misma tranquilidad que la primera.")
 
 # =============================================================================
-# PESTAÑA 3: BILLETERA Y EFECTIVO
+# PESTAÑA 4: BILLETERA Y EFECTIVO
 # =============================================================================
 with tab_efectivo:
     st.header("👛 Control de Billetera y Efectivo")
@@ -1142,17 +1191,13 @@ with tab_efectivo:
     df_raw_efectivo = obtener_movimientos(USER_ID)
 
     if not df_raw_efectivo.empty:
-        # 1. Total que ha entrado a la billetera desde el cajero
         total_retirado = df_raw_efectivo[df_raw_efectivo['tipo'] == 'Retiro']['monto'].sum()
         
-        # 2. Detecta todos los gastos realizados en efectivo (sin importar mayúsculas/minúsculas)
         mask_gastos_efectivo = (
             df_raw_efectivo['descripcion'].str.contains("efectivo", case=False, na=False) & 
             (df_raw_efectivo['tipo'] != 'Retiro')
         )
         total_gastado_efectivo = df_raw_efectivo[mask_gastos_efectivo]['monto'].sum()
-
-        # 3. Cálculo del disponible (aquí se define la variable que daba error)
         saldo_billetera_actual = total_retirado - total_gastado_efectivo
 
         st.markdown("### 📊 Balance Actual de la Billetera")
