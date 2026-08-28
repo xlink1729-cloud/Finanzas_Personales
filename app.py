@@ -57,25 +57,37 @@ def validar_usuario_db(username, password):
     try:
         conn = get_connection()
         with conn.cursor() as cur:
+            # 1. Buscar usuario en la base de datos
             cur.execute(
                 "SELECT id, username, password_hash FROM usuarios WHERE LOWER(username) = %s",
                 (username.lower().strip(),)
             )
             user = cur.fetchone()
-            if user:
-                user_id, user_name, pass_hash = user
-                if verificar_password(password, pass_hash):
-                    return (user_id, user_name)
-            return None
+            
+            if not user:
+                st.error(f"❌ El usuario '{username.strip()}' no existe en la base de datos.")
+                return None
+                
+            user_id, user_name, pass_hash = user
+            
+            # 2. Intentar verificar contraseña
+            if verificar_password(password, pass_hash):
+                return (user_id, user_name)
+            else:
+                st.error("❌ La contraseña no coincide con la registrada.")
+                # Diagnóstico útil (puedes quitarlo después de probar):
+                st.info(f"Formato de hash en DB: '{pass_hash[:10]}...' (Largo: {len(pass_hash)})")
+                return None
+                
     except Exception as e:
         if conn:
             conn.rollback()
-        st.error(f"Error en autenticación: {e}")
+        st.error(f"🚨 Error de conexión/consulta en PostgreSQL: {e}")
         return None
     finally:
         if conn:
             conn.close()
-
+            
 def registrar_usuario_db(username, password, nombre):
     """Inserta un nuevo usuario en la base de datos PostgreSQL/Neon."""
     conn = None
