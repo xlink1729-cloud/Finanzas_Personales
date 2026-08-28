@@ -287,6 +287,7 @@ st.title("💰 Control de Finanzas e Inversiones")
 tab_flujo, tab_ahorros, tab_efectivo = st.tabs([
     "💵 Flujo Quincenal y Nómina", 
     "📈 Portafolio de Inversiones (CETES, Fintual)",
+    "📊 Presupuesto Mensual (Regla 50 / 30 / 20)",
     "👛 Billetera y Efectivo"
 ])
 
@@ -941,6 +942,149 @@ with tab_ahorros:
             st.info("Aún no has registrado cuentas en tu portafolio de inversión.")
     else:
         st.info("No hay datos registrados aún.")
+
+# =============================================================================
+# PESTAÑA: PRESUPUESTO 50/30/20 & FLUJO QUINCENAL
+# =============================================================================
+with tab_presupuesto:
+    st.markdown("### 📊 Presupuesto Mensual (Regla 50 / 30 / 20)")
+    st.caption("Planifica tus finanzas sobre tu ingreso total estimado del mes y monitorea el avance quincenal.")
+
+    current_user_id = st.session_state.get("user_id")
+    df_raw = obtener_movimientos(current_user_id)
+
+    # 1. Configuración de Ingresos del Mes
+    with st.expander("⚙️ Configurar Ingreso Mensual Base", expanded=False):
+        col_inc1, col_inc2 = st.columns(2)
+        with col_inc1:
+            ingreso_q1 = st.number_input("Ingreso Neto 1.ª Quincena ($)", min_value=0.0, value=10000.0, step=500.0, format="%.2f")
+        with col_inc2:
+            ingreso_q2 = st.number_input("Ingreso Neto 2.ª Quincena ($)", min_value=0.0, value=10000.0, step=500.0, format="%.2f")
+        
+        ingreso_mensual_total = ingreso_q1 + ingreso_q2
+        st.info(f"💡 **Ingreso Total Estimado del Mes:** {fmt_monto(ingreso_mensual_total)}")
+
+    # 2. Cálculos de la Regla 50/30/20
+    limite_necesidades = ingreso_mensual_total * 0.50  # 50%
+    limite_deseos = ingreso_mensual_total * 0.30       # 30%
+    limite_ahorro = ingreso_mensual_total * 0.20       # 20%
+
+    st.markdown("---")
+
+    # 3. Métricas Principales del Presupuesto
+    col_p1, col_p2, col_p3 = st.columns(3)
+    col_p1.metric(
+        label="🏠 50% Necesidades / Fijos", 
+        value=fmt_monto(limite_necesidades), 
+        help="Renta, plan celular, despensa básica y servicios vitales."
+    )
+    col_p2.metric(
+        label="🎉 30% Deseos / Estilo de Vida", 
+        value=fmt_monto(limite_deseos), 
+        help="Salidas de fin de semana, hobbies, entretenimiento."
+    )
+    col_p3.metric(
+        label="🛡️ 20% Ahorro / Inversión", 
+        value=fmt_monto(limite_ahorro), 
+        help="Fondo de emergencia, Cajita Nu, Cetes, Finsus."
+    )
+
+    st.markdown("---")
+
+    # 4. Obtención de Gastos Reales del Mes en Curso (Excluyendo TDC o analizándolos por categoría)
+    if not df_raw.empty:
+        df_raw['fecha'] = pd.to_datetime(df_raw['fecha'])
+        
+        # Filtrar mes actual
+        fecha_actual = obtener_fecha_local()
+        df_mes = df_raw[(df_raw['fecha'].dt.month == fecha_actual.month) & (df_raw['fecha'].dt.year == fecha_actual.year)].copy()
+
+        # Separar por categorías/tipos
+        # Filtrar solo gastos o salidas reales de dinero
+        mask_gastos = df_mes['tipo'].str.lower().str.contains("gasto|salida|egreso", na=False)
+        df_gastos_mes = df_mes[mask_gastos].copy()
+
+        # Clasificación simplificada de gastos reales registrados
+        mask_fijos = df_gastos_mes['categoria'].str.lower().str.contains("renta|celular|plan|servicio|luz|agua|despensa", na=False)
+        mask_ahorro = df_gastos_mes['tipo'].str.lower().str.contains("inversion|ahorro", na=False) | df_gastos_mes['categoria'].str.lower().str.contains("inversi|ahorro", na=False)
+        mask_deseos = ~mask_fijos & ~mask_ahorro
+
+        gasto_fijos_real = df_gastos_mes[mask_fijos]['monto'].sum()
+        gasto_ahorro_real = df_gastos_mes[mask_ahorro]['monto'].sum()
+        gasto_deseos_real = df_gastos_mes[mask_deseos]['monto'].sum()
+
+    else:
+        gasto_fijos_real = 0.0
+        gasto_deseos_real = 0.0
+        gasto_ahorro_real = 0.0
+
+    # 5. Barras de Progreso de Ejecución del Presupuesto
+    st.markdown("#### 📈 Ejecución de tu Presupuesto este Mes")
+
+    col_b1, col_b2, col_b3 = st.columns(3)
+
+    with col_b1:
+        st.markdown("**🏠 Gastos Fijos / Necesidades**")
+        pct_fijos = min(1.0, gasto_fijos_real / limite_necesidades) if limite_necesidades > 0 else 0
+        st.progress(pct_fijos)
+        if ocultar_saldos:
+            st.caption("•••••• de ••••••")
+        else:
+            st.caption(f"Gastado: **${gasto_fijos_real:,.2f}** / **${limite_necesidades:,.2f}** ({pct_fijos*100:.1f}%)")
+
+    with col_b2:
+        st.markdown("**🎉 Deseos y Salidas (Efectivo / Gustos)**")
+        pct_deseos = min(1.0, gasto_deseos_real / limite_deseos) if limite_deseos > 0 else 0
+        st.progress(pct_deseos)
+        if ocultar_saldos:
+            st.caption("•••••• de ••••••")
+        else:
+            st.caption(f"Gastado: **${gasto_deseos_real:,.2f}** / **${limite_deseos:,.2f}** ({pct_deseos*100:.1f}%)")
+            st.info(f"💡 Te quedan **${max(0.0, limite_deseos - gasto_deseos_real):,.2f}** libres para salidas.")
+
+    with col_b3:
+        st.markdown("**🛡️ Meta de Ahorro e Inversión (20%)**")
+        pct_ahorro = min(1.0, gasto_ahorro_real / limite_ahorro) if limite_ahorro > 0 else 0
+        st.progress(pct_ahorro)
+        if ocultar_saldos:
+            st.caption("•••••• de ••••••")
+        else:
+            st.caption(f"Aportado: **${gasto_ahorro_real:,.2f}** / **${limite_ahorro:,.2f}** ({pct_ahorro*100:.1f}%)")
+
+    st.markdown("---")
+
+    # 6. Módulo Especial: Balance de Flujo Quincenal
+    st.markdown("### 🗓️ Estrategia de Flujo de Caja Quincenal")
+    st.caption("Nivelación de compromisos entre la 1.ª y 2.ª Quincena.")
+
+    tab_q1_p, tab_q2_p = st.tabs(["1.ª Quincena (Días 1 - 15)", "2.ª Quincena (Días 16 - Fin de mes)"])
+
+    with tab_q1_p:
+        st.markdown("#### 🟢 1.ª Quincena (Ciclo Ligero)")
+        col_q1_a, col_q1_b = st.columns(2)
+        
+        with col_q1_a:
+            st.subheader("Compromisos Obligatorios")
+            st.markdown("- **Salidas Fines de Semana (2 fines):** ~$3,200.00 MXN *(Efectivo)*")
+            st.markdown("- **Reserva 50% de Renta:** Apartar para la 2ª Quincena.")
+            st.markdown("- **Págate a ti mismo (10% Ahorro Q1):** Directo a Nu / Cetes.")
+        
+        with col_q1_b:
+            st.warning("💡 **Tip Q1:** Como no pagas Renta en esta quincena, **guarda el 50% de la renta en una Cajita** inmediatamente al cobrar para que no sientas la 2ª quincena pesada.")
+
+    with tab_q2_p:
+        st.markdown("#### 🔴 2.ª Quincena (Ciclo Pesado)")
+        col_q2_a, col_q2_b = st.columns(2)
+        
+        with col_q2_a:
+            st.subheader("Compromisos Obligatorios")
+            st.markdown("- **Renta:** Pago completo (Completado con reserva de la Q1).")
+            st.markdown("- **Plan de Celular:** Pago recurrente.")
+            st.markdown("- **Salidas Fines de Semana (2 fines):** ~$3,200.00 MXN *(Efectivo)*")
+            st.markdown("- **Págate a ti mismo (10% Ahorro Q2):** Directo a Nu / Cetes.")
+            
+        with col_q2_b:
+            st.success("✅ Si apartaste el 50% de la renta durante la Q1, esta quincena fluirá con la misma tranquilidad que la primera.")
 
 # =============================================================================
 # PESTAÑA 3: BILLETERA Y EFECTIVO
