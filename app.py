@@ -468,31 +468,40 @@ with tab_flujo:
 
             st.markdown("### 📅 Ciclo de Nómina Actual")
             
-            if hoy_ts.day >= 15 and hoy_ts.day <= 29:
-                inicio_q = hoy_ts.replace(day=15)
-                fin_q = hoy_ts.replace(day=29)
-                etiqueta_q = f"Ciclo Nómina del 15 (Del {inicio_q.strftime('%d/%m')} al {fin_q.strftime('%d/%m')})"
-            elif hoy_ts.day >= 30:
-                inicio_q = hoy_ts.replace(day=30)
-                proximo_mes = (hoy_ts.replace(day=28) + pd.Timedelta(days=4)).replace(day=14)
-                fin_q = proximo_mes
-                etiqueta_q = f"Ciclo Nómina del 30 (Del {inicio_q.strftime('%d/%m')} al {fin_q.strftime('%d/%m')})"
-            else:
-                mes_anterior = (hoy_ts.replace(day=1) - pd.Timedelta(days=1))
-                inicio_q = mes_anterior.replace(day=30) if mes_anterior.day >= 30 else mes_anterior.replace(day=28)
-                fin_q = hoy_ts.replace(day=14)
-                etiqueta_q = f"Ciclo Nómina del 30 anterior (Del {inicio_q.strftime('%d/%m')} al {fin_q.strftime('%d/%m')})"
+            # --- REGLA DINÁMICA POR ÚLTIMA NÓMINA REGISTRADA ---
+            df_nominas = df_flujo[
+                (df_flujo['tipo'] == 'Ingreso') & 
+                (df_flujo['categoria'].str.contains("Nómina", case=False, na=False))
+            ].sort_values('fecha', ascending=False)
 
+            if not df_nominas.empty:
+                # La fecha de inicio es el día que ingresó el último pago de nómina
+                ultima_nomina = df_nominas.iloc[0]
+                inicio_q = pd.Timestamp(ultima_nomina['fecha'])
+                nomina_ingresada_ciclo = float(ultima_nomina['monto'])
+                etiqueta_q = f"Ciclo Activo (Nómina del {inicio_q.strftime('%d/%m/%Y')})"
+            else:
+                # Regla de respaldo si aún no hay nóminas registradas en el sistema
+                inicio_q = hoy_ts.replace(day=1)
+                nomina_ingresada_ciclo = 0.0
+                etiqueta_q = "Ciclo Inicial (Sin registro de nómina)"
+
+            # El ciclo abarca desde el día del último pago hasta hoy
+            fin_q = hoy_ts 
+
+            # Filtrar los movimientos que corresponden a este ciclo activo
             df_q_actual = df_flujo[(df_flujo['fecha'] >= inicio_q.normalize()) & (df_flujo['fecha'] <= fin_q.normalize())]
             
+            # --- CÁLCULOS ACUMULADOS Y HISTÓRICOS ---
             mask_debito_global = df_flujo['descripcion'].str.contains("Débito", na=False) | (~df_flujo['descripcion'].str.contains("Efectivo", na=False))
             ingresos_totales_historicos = df_flujo[df_flujo['tipo'] == 'Ingreso']['monto'].sum()
             gastos_debito_historicos = df_flujo[(df_flujo['tipo'] == 'Egreso') & mask_debito_global]['monto'].sum()
-            
             retiros_historicos = df_flujo[df_flujo['tipo'] == 'Retiro']['monto'].sum()
+            
+            # Saldo disponible real en la cuenta de débito
             nomina_restante = ingresos_totales_historicos - gastos_debito_historicos - retiros_historicos
 
-            nomina_ingresada_ciclo = df_q_actual[df_q_actual['tipo'] == 'Ingreso']['monto'].sum()
+            # Gastos del ciclo actual
             mask_debito_q = df_q_actual['descripcion'].str.contains("Débito", na=False) | (~df_q_actual['descripcion'].str.contains("Efectivo", na=False))
             gastos_debito_ciclo = df_q_actual[(df_q_actual['tipo'] == 'Egreso') & mask_debito_q]['monto'].sum()
             gastos_efectivo_ciclo = df_q_actual[(df_q_actual['tipo'] == 'Egreso') & df_q_actual['descripcion'].str.contains("Efectivo", na=False)]['monto'].sum()
@@ -503,30 +512,34 @@ with tab_flujo:
             col_q1.metric("💵 Saldo Real en Débito (Acumulado)", fmt_monto(nomina_restante), help="Sueldo histórico menos gastos en débito y retiros de cajero.")
             col_q2.metric("💳 Gastos con Débito (Ciclo)", fmt_monto(gastos_debito_ciclo), delta_color="inverse")
             col_q3.metric("💵 Gastos en Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
-            col_q4.metric("🏦 Depositado este Ciclo", fmt_monto(nomina_ingresada_ciclo))
+            col_q4.metric("🏦 Nómina Recibida", fmt_monto(nomina_ingresada_ciclo))
 
-            fecha_fin_ciclo = fin_q.date() if hasattr(fin_q, 'date') else fin_q
-            dias_restantes = (fecha_fin_ciclo - hoy_date).days + 1
-            dias_para_dividir = max(dias_restantes, 1)
+            # --- DÍAS RESTANTES (Calculando un ciclo estimado de 15 días desde que te pagaron) ---
+            fecha_estimada_fin = inicio_q + pd.Timedelta(days=15)
+            dias_restantes = max((fecha_estimada_fin.date() - hoy_date).days, 1)
+            gasto_diario_sugerido = nomina_restante / dias_restantes if nomina_restante > 0 else 0.00
 
-            gasto_diario_sugerido = nomina_restante / dias_para_dividir if nomina_restante > 0 else 0.00
-            porcentaje_gastado = (gastos_debito_ciclo / (nomina_ingresada_ciclo if nomina_ingresada_ciclo > 0 else 1)) * 100
+            # --- PORCENTAJE SEGURO BASADO EN LA NÓMINA ACTIVA ---
+            if nomina_ingresada_ciclo > 0:
+                porcentaje_gastado = (gastos_debito_ciclo / nomina_ingresada_ciclo) * 100
+            else:
+                porcentaje_gastado = 0.0
 
             st.markdown("---")
             st.markdown("### 🚨 Control de Ritmo de Gasto y Freno de Mano")
 
             col_f1, col_f2, col_f3 = st.columns(3)
 
-            col_f1.metric("⏳ Días Restantes del Ciclo", f"{dias_restantes} días", delta=f"Cierra el {fecha_fin_ciclo.strftime('%d/%m')}")
-            col_f2.metric("💳 Gasto Diario Máximo Sugerido", fmt_monto(gasto_diario_sugerido), help="Saldo Real en Débito dividido entre días faltantes.")
+            col_f1.metric("⏳ Días Est. para Próximo Pago", f"{dias_restantes} días", delta=f"Proyectado al {fecha_estimada_fin.strftime('%d/%m')}")
+            col_f2.metric("💳 Gasto Diario Máximo Sugerido", fmt_monto(gasto_diario_sugerido), help="Saldo Real en Débito dividido entre días faltantes estimados.")
 
             if porcentaje_gastado < 70:
-                col_f3.success(f"🟢 **Ritmo Saludable**\n\nHas consumido el {porcentaje_gastado:.1f}% del depósito de esta quincena.")
+                col_f3.success(f"🟢 **Ritmo Saludable**\n\nHas consumido el {porcentaje_gastado:.1f}% de la nómina de esta quincena.")
             elif porcentaje_gastado <= 90:
-                col_f3.warning(f"🟡 **Precaución**\n\nHas consumido el {porcentaje_gastado:.1f}% del depósito de esta quincena.")
+                col_f3.warning(f"🟡 **Precaución**\n\nHas consumido el {porcentaje_gastado:.1f}% de la nómina de esta quincena.")
             else:
-                col_f3.error(f"🔴 **FRENO DE MANO**\n\nHas consumido el {porcentaje_gastado:.1f}% del depósito de esta quincena.")
-
+                col_f3.error(f"🔴 **FRENO DE MANO**\n\nHas consumido el {porcentaje_gastado:.1f}% de la nómina de esta quincena.")
+                
             st.markdown("---")
 
             st.markdown("### 📈 Distribución de Gastos: Fijos vs. Variables vs. Inversión")
