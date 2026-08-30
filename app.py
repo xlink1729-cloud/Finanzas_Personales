@@ -486,13 +486,13 @@ with tab_flujo:
                 nomina_ingresada_ciclo = 0.0
                 etiqueta_q = "Ciclo Inicial (Sin registro de nómina)"
 
-            # El ciclo abarca desde el día del último pago hasta hoy
+            # El ciclo abarca desde el día del último pago registrado hasta hoy
             fin_q = hoy_ts 
 
             # Filtrar los movimientos que corresponden a este ciclo activo
             df_q_actual = df_flujo[(df_flujo['fecha'] >= inicio_q.normalize()) & (df_flujo['fecha'] <= fin_q.normalize())]
             
-            # --- CÁLCULOS ACUMULADOS Y HISTÓRICOS ---
+            # --- CÁLCULOS ACUMULADOS HISTÓRICOS ---
             mask_debito_global = df_flujo['descripcion'].str.contains("Débito", na=False) | (~df_flujo['descripcion'].str.contains("Efectivo", na=False))
             ingresos_totales_historicos = df_flujo[df_flujo['tipo'] == 'Ingreso']['monto'].sum()
             gastos_debito_historicos = df_flujo[(df_flujo['tipo'] == 'Egreso') & mask_debito_global]['monto'].sum()
@@ -514,9 +514,24 @@ with tab_flujo:
             col_q3.metric("💵 Gastos en Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
             col_q4.metric("🏦 Nómina Recibida", fmt_monto(nomina_ingresada_ciclo))
 
-            # --- DÍAS RESTANTES (Calculando un ciclo estimado de 15 días desde que te pagaron) ---
-            fecha_estimada_fin = inicio_q + pd.Timedelta(days=15)
-            dias_restantes = max((fecha_estimada_fin.date() - hoy_date).days, 1)
+            # --- PROYECTAR PRÓXIMA META OFICIAL DE CALENDARIO (15 O FIN DE MES) ---
+            dia_pago = inicio_q.day
+
+            # Si el pago ingresó a fin de mes/inicios de mes (días 25 a 5), la meta del próximo pago es el 15
+            if dia_pago >= 25 or dia_pago <= 5:
+                if inicio_q.day >= 25:
+                    mes_target = inicio_q.month + 1 if inicio_q.month < 12 else 1
+                    anio_target = inicio_q.year if inicio_q.month < 12 else inicio_q.year + 1
+                    fecha_estimada_fin = pd.Timestamp(year=anio_target, month=mes_target, day=15)
+                else:
+                    fecha_estimada_fin = inicio_q.replace(day=15)
+            # Si el pago ingresó en quincena (días 6 a 24), la meta es el último día del mes
+            else:
+                proximo_mes = (inicio_q.replace(day=28) + pd.Timedelta(days=4))
+                fecha_estimada_fin = proximo_mes.replace(day=1) - pd.Timedelta(days=1)
+
+            # Días faltantes reales hasta la fecha meta
+            dias_restantes = max((fecha_estimada_fin.date() - hoy_date).days + 1, 1)
             gasto_diario_sugerido = nomina_restante / dias_restantes if nomina_restante > 0 else 0.00
 
             # --- PORCENTAJE SEGURO BASADO EN LA NÓMINA ACTIVA ---
