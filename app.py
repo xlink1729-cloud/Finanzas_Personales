@@ -1192,25 +1192,38 @@ with tab_presupuesto:
 # =============================================================================
 with tab_efectivo:
     st.header("👛 Control de Billetera y Efectivo")
-    st.caption("Administra los billetes que retiras del cajero sin desajustar tu saldo bancario ni duplicar registros.")
+    st.caption("Administra los billetes que retiras del cajero o ajusta tu saldo físico sin alterar tu saldo bancario.")
 
     col_ef1, col_ef2 = st.columns(2)
 
     with col_ef1:
-        st.subheader("1. 🏦 Registrar Retiro de Cajero")
-        st.info("Esto descuenta el dinero de tu Débito y lo transfiere a tu Billetera (no cuenta como gasto aún).")
+        st.subheader("1. 📥 Entrada de Efectivo / Ajuste")
         
+        tipo_entrada = st.radio(
+            "Origen del Dinero", 
+            ["🏦 Retiro de Cajero (Descuenta de Débito)", "💵 Ajuste / Dinero Extra (NO afecta Débito)"],
+            help="Usa 'Ajuste' si tenías efectivo guardado previamente o no quieres que reste a tu nómina."
+        )
+
         with st.form("form_retiro_efectivo", clear_on_submit=True):
-            monto_retiro = st.number_input("Monto Retirado ($)", min_value=10.0, step=50.0, format="%.2f")
-            fecha_retiro = st.date_input("Fecha del Retiro", obtener_fecha_local(), key="fecha_retiro_ef")
-            desc_retiro = st.text_input("Detalle / Cajero", placeholder="Ej. Cajero Santander, Retiro de emergencia, etc.")
+            monto_retiro = st.number_input("Monto ($)", min_value=1.0, step=10.0, format="%.2f")
+            fecha_retiro = st.date_input("Fecha", obtener_fecha_local(), key="fecha_retiro_ef")
+            desc_retiro = st.text_input("Detalle / Notas", placeholder="Ej. Cajero Santander / Efectivo que ya tenía")
             
-            submit_retiro = st.form_submit_button("🏦 Registrar Entrada a Billetera", use_container_width=True)
+            submit_retiro = st.form_submit_button("💾 Guardar Entrada a Billetera", use_container_width=True)
 
         if submit_retiro:
-            desc_ret_final = f"[💳 Tarjeta de Débito (Nómina)] Retiro Cajero: {desc_retiro}".strip()
-            if guardar_movimiento("Retiro", monto_retiro, "Retiro de Cajero (Débito ➔ Efectivo)", desc_ret_final, fecha_retiro, USER_ID):
-                st.success(f"✅ Retiro de {fmt_monto(monto_retiro)} ingresado a la Billetera.")
+            if "Retiro de Cajero" in tipo_entrada:
+                tipo_db = "Retiro"
+                cat_entrada = "Retiro de Cajero (Débito ➔ Efectivo)"
+                desc_ret_final = f"[💳 Tarjeta de Débito (Nómina)] Retiro Cajero: {desc_retiro}".strip()
+            else:
+                tipo_db = "Ingreso"
+                cat_entrada = "Ajuste de Efectivo"
+                desc_ret_final = f"[💵 Efectivo] Ajuste de saldo previo en cartera: {desc_retiro}".strip()
+
+            if guardar_movimiento(tipo_db, monto_retiro, cat_entrada, desc_ret_final, fecha_retiro, USER_ID):
+                st.success(f"✅ Se agregaron {fmt_monto(monto_retiro)} a tu Billetera.")
                 st.rerun()
 
     with col_ef2:
@@ -1243,11 +1256,16 @@ with tab_efectivo:
     df_raw_efectivo = obtener_movimientos(USER_ID)
 
     if not df_raw_efectivo.empty:
-        total_retirado = df_raw_efectivo[df_raw_efectivo['tipo'] == 'Retiro']['monto'].sum()
+        # Filtrado de entradas y salidas de efectivo
+        mask_entradas_efectivo = (
+            (df_raw_efectivo['tipo'] == 'Retiro') | 
+            (df_raw_efectivo['categoria'] == 'Ajuste de Efectivo')
+        )
+        total_retirado = df_raw_efectivo[mask_entradas_efectivo]['monto'].sum()
         
         mask_gastos_efectivo = (
             df_raw_efectivo['descripcion'].str.contains("efectivo", case=False, na=False) & 
-            (df_raw_efectivo['tipo'] != 'Retiro')
+            (~mask_entradas_efectivo)
         )
         total_gastado_efectivo = df_raw_efectivo[mask_gastos_efectivo]['monto'].sum()
         saldo_billetera_actual = total_retirado - total_gastado_efectivo
@@ -1255,14 +1273,14 @@ with tab_efectivo:
         st.markdown("### 📊 Balance Actual de la Billetera")
         
         c_b1, c_b2, c_b3 = st.columns(3)
-        c_b1.metric("🏦 Total Retirado de Cajeros", fmt_monto(total_retirado))
+        c_b1.metric("📥 Total Entradas / Retiros", fmt_monto(total_retirado))
         c_b2.metric("💸 Total Gastado en Efectivo", fmt_monto(total_gastado_efectivo), delta_color="inverse")
         c_b3.metric("💵 Disponible en Bolsillo / Billetera", fmt_monto(saldo_billetera_actual))
 
         st.markdown("---")
         st.markdown("### 📋 Historial Exclusivo de Efectivo")
         
-        mask_movs_efectivo = (df_raw_efectivo['tipo'] == 'Retiro') | mask_gastos_efectivo
+        mask_movs_efectivo = mask_entradas_efectivo | mask_gastos_efectivo
         df_hist_efectivo = df_raw_efectivo[mask_movs_efectivo].copy()
 
         if not df_hist_efectivo.empty:
@@ -1283,6 +1301,49 @@ with tab_efectivo:
                 st.dataframe(df_hist_show[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_ef_cols, use_container_width=True, hide_index=True)
             else:
                 st.dataframe(df_hist_efectivo[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_ef_cols, use_container_width=True, hide_index=True)
+            
+            # -----------------------------------------------------------------
+            # SECCIÓN: MODIFICAR Y ELIMINAR REGISTROS EN EFECTIVO
+            # -----------------------------------------------------------------
+            st.markdown("---")
+            st.subheader("🛠️ Administrar Registros de Efectivo")
+            
+            col_mod_ef, col_del_ef = st.columns(2)
+            
+            lista_ids_efectivo = df_hist_efectivo['id'].tolist()
+            
+            # --- MODIFICAR REGISTRO ---
+            with col_mod_ef:
+                st.markdown("**✏️ Editar Registro**")
+                id_a_editar = st.selectbox("Selecciona ID a editar:", lista_ids_efectivo, key="select_mod_ef")
+                
+                registro_sel = df_hist_efectivo[df_hist_efectivo['id'] == id_a_editar].iloc[0]
+                
+                with st.form("form_editar_efectivo"):
+                    edit_monto = st.number_input("Monto ($)", min_value=0.01, value=float(registro_sel['monto']), step=10.0, format="%.2f")
+                    edit_fecha = st.date_input("Fecha", pd.to_datetime(registro_sel['fecha']).date())
+                    edit_desc = st.text_input("Detalle", value=str(registro_sel['descripcion']))
+                    
+                    btn_modificar = st.form_submit_button("💾 Actualizar Registro", use_container_width=True)
+                    
+                    if btn_modificar:
+                        if actualizar_movimiento(id_a_editar, edit_monto, registro_sel['categoria'], edit_desc, edit_fecha, USER_ID):
+                            st.success(f"✅ Registro ID {id_a_editar} actualizado correctamente.")
+                            st.rerun()
+
+            # --- ELIMINAR REGISTRO ---
+            with col_del_ef:
+                st.markdown("**🗑️ Eliminar Registro**")
+                id_a_eliminar = st.selectbox("Selecciona ID a eliminar:", lista_ids_efectivo, key="select_del_ef")
+                
+                reg_del_info = df_hist_efectivo[df_hist_efectivo['id'] == id_a_eliminar].iloc[0]
+                st.warning(f"⚠️ **Atención:** Eliminarás el registro **ID {id_a_eliminar}** por **${reg_del_info['monto']:.2f}** ({reg_del_info['descripcion']}).")
+                
+                if st.button("🗑️ Confirmar Eliminar Registro", use_container_width=True, type="primary"):
+                    if eliminar_movimiento(id_a_eliminar, USER_ID):
+                        st.success(f"✅ Registro ID {id_a_eliminar} eliminado.")
+                        st.rerun()
+
         else:
             st.info("Aún no tienes movimientos registrados en efectivo.")
     else:
