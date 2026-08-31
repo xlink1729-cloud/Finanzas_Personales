@@ -1196,6 +1196,9 @@ with tab_efectivo:
 
     col_ef1, col_ef2 = st.columns(2)
 
+    # -------------------------------------------------------------------------
+    # 1. ENTRADA DE EFECTIVO / AJUSTE
+    # -------------------------------------------------------------------------
     with col_ef1:
         st.subheader("1. 📥 Entrada de Efectivo / Ajuste")
         
@@ -1226,6 +1229,9 @@ with tab_efectivo:
                 st.success(f"✅ Se agregaron {fmt_monto(monto_retiro)} a tu Billetera.")
                 st.rerun()
 
+    # -------------------------------------------------------------------------
+    # 2. SALIDA DE EFECTIVO / GASTOS
+    # -------------------------------------------------------------------------
     with col_ef2:
         st.subheader("2. 💸 Registrar Gasto Realizado en Efectivo")
         st.info("Esto descuenta directamente del efectivo de tu bolsillo y asigna la categoría de gasto.")
@@ -1253,10 +1259,12 @@ with tab_efectivo:
 
     st.markdown("---")
 
+    # -------------------------------------------------------------------------
+    # 3. METRICAS Y TABLA DE HISTORIAL EXCLUSIVO DE EFECTIVO
+    # -------------------------------------------------------------------------
     df_raw_efectivo = obtener_movimientos(USER_ID)
 
     if not df_raw_efectivo.empty:
-        # Filtrado de entradas y salidas de efectivo
         mask_entradas_efectivo = (
             (df_raw_efectivo['tipo'] == 'Retiro') | 
             (df_raw_efectivo['categoria'] == 'Ajuste de Efectivo')
@@ -1301,47 +1309,76 @@ with tab_efectivo:
                 st.dataframe(df_hist_show[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_ef_cols, use_container_width=True, hide_index=True)
             else:
                 st.dataframe(df_hist_efectivo[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_ef_cols, use_container_width=True, hide_index=True)
-            
+
             # -----------------------------------------------------------------
-            # SECCIÓN: MODIFICAR Y ELIMINAR REGISTROS EN EFECTIVO
+            # 4. EDICIÓN / ELIMINACIÓN CON OPCIÓN DE CANCELAR
             # -----------------------------------------------------------------
             st.markdown("---")
-            st.subheader("🛠️ Administrar Registros de Efectivo")
-            
-            col_mod_ef, col_del_ef = st.columns(2)
+            st.markdown("### 🛠️ Modificar o Eliminar Registro de Efectivo")
             
             lista_ids_efectivo = df_hist_efectivo['id'].tolist()
+            id_sel_ef = st.selectbox("Selecciona el ID del registro a gestionar:", lista_ids_efectivo, key="sb_id_efectivo")
             
-            # --- MODIFICAR REGISTRO ---
-            with col_mod_ef:
-                st.markdown("**✏️ Editar Registro**")
-                id_a_editar = st.selectbox("Selecciona ID a editar:", lista_ids_efectivo, key="select_mod_ef")
-                
-                registro_sel = df_hist_efectivo[df_hist_efectivo['id'] == id_a_editar].iloc[0]
-                
-                with st.form("form_editar_efectivo"):
-                    edit_monto = st.number_input("Monto ($)", min_value=0.01, value=float(registro_sel['monto']), step=10.0, format="%.2f")
-                    edit_fecha = st.date_input("Fecha", pd.to_datetime(registro_sel['fecha']).date())
-                    edit_desc = st.text_input("Detalle", value=str(registro_sel['descripcion']))
-                    
-                    btn_modificar = st.form_submit_button("💾 Actualizar Registro", use_container_width=True)
-                    
-                    if btn_modificar:
-                        if actualizar_movimiento(id_a_editar, edit_monto, registro_sel['categoria'], edit_desc, edit_fecha, USER_ID):
-                            st.success(f"✅ Registro ID {id_a_editar} actualizado correctamente.")
-                            st.rerun()
+            # Obtener datos del registro seleccionado
+            row_sel_ef = df_hist_efectivo[df_hist_efectivo['id'] == id_sel_ef].iloc[0]
+            
+            # Inicializar estado para mostrar/ocultar el panel de modificación
+            if "mostrar_edit_ef" not in st.session_state:
+                st.session_state.mostrar_edit_ef = False
 
-            # --- ELIMINAR REGISTRO ---
-            with col_del_ef:
-                st.markdown("**🗑️ Eliminar Registro**")
-                id_a_eliminar = st.selectbox("Selecciona ID a eliminar:", lista_ids_efectivo, key="select_del_ef")
+            col_btn1, col_btn2 = st.columns(2)
+            
+            with col_btn1:
+                if st.button("✏️ Editar Registro", use_container_width=True, key="btn_abrir_edit_ef"):
+                    st.session_state.mostrar_edit_ef = True
+
+            with col_btn2:
+                # Confirmación previa de eliminación para evitar borrados accidentales
+                if st.button("🗑️ Eliminar Registro", use_container_width=True, type="secondary", key="btn_del_ef"):
+                    st.session_state.confirmar_del_ef = True
+
+            # Diálogo / Alerta de Confirmación de Borrado
+            if st.session_state.get("confirmar_del_ef", False):
+                st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar el registro ID **{id_sel_ef}** ({row_sel_ef['descripcion']} - {fmt_monto(row_sel_ef['monto'])})?")
+                c_del_confirm, c_del_cancel = st.columns(2)
                 
-                reg_del_info = df_hist_efectivo[df_hist_efectivo['id'] == id_a_eliminar].iloc[0]
-                st.warning(f"⚠️ **Atención:** Eliminarás el registro **ID {id_a_eliminar}** por **${reg_del_info['monto']:.2f}** ({reg_del_info['descripcion']}).")
-                
-                if st.button("🗑️ Confirmar Eliminar Registro", use_container_width=True, type="primary"):
-                    if eliminar_movimiento(id_a_eliminar, USER_ID):
-                        st.success(f"✅ Registro ID {id_a_eliminar} eliminado.")
+                with c_del_confirm:
+                    if st.button("🔴 Sí, Eliminar Definitivamente", use_container_width=True, type="primary"):
+                        if eliminar_movimiento_db(id_sel_ef, USER_ID):
+                            st.session_state.confirmar_del_ef = False
+                            st.success("✅ Registro eliminado correctamente.")
+                            st.rerun()
+                            
+                with c_del_cancel:
+                    if st.button("❌ Cancelar Eliminación", use_container_width=True):
+                        st.session_state.confirmar_del_ef = False
+                        st.info("Operación de eliminación cancelada.")
+                        st.rerun()
+
+            # Formulario desplegable para Edición con botón de Cancelar
+            if st.session_state.mostrar_edit_ef:
+                st.info(f"Editando registro ID #{id_sel_ef}")
+                with st.form("form_editar_efectivo"):
+                    e_monto = st.number_input("Monto ($)", value=float(row_sel_ef['monto']), min_value=0.01, step=10.0, format="%.2f")
+                    e_fecha = st.date_input("Fecha", pd.to_datetime(row_sel_ef['fecha']).date())
+                    e_categoria = st.text_input("Categoría", value=str(row_sel_ef['categoria']))
+                    e_desc = st.text_input("Descripción / Detalle", value=str(row_sel_ef['descripcion']))
+                    
+                    c_edit_save, c_edit_cancel = st.columns(2)
+                    with c_edit_save:
+                        submit_edit = st.form_submit_button("💾 Guardar Cambios", use_container_width=True, type="primary")
+                    with c_edit_cancel:
+                        cancel_edit = st.form_submit_button("❌ Cancelar Modificación", use_container_width=True)
+
+                    if submit_edit:
+                        if actualizar_movimiento_db(id_sel_ef, row_sel_ef['tipo'], e_monto, e_categoria, e_desc, e_fecha, USER_ID):
+                            st.session_state.mostrar_edit_ef = False
+                            st.success("✅ Registro actualizado con éxito.")
+                            st.rerun()
+                            
+                    if cancel_edit:
+                        st.session_state.mostrar_edit_ef = False
+                        st.info("Modificación cancelada.")
                         st.rerun()
 
         else:
