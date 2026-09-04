@@ -621,7 +621,6 @@ with tab_flujo:
 =======
                 col_f3.error(f"🔴 **FRENO DE MANO**\n\nHas consumido el {porcentaje_gastado:.1f}% de la nómina de esta quincena.")
                 
->>>>>>> 7dd3622f3ff8d6fe137531814e775752d1d28654
             st.markdown("---")
 
             st.markdown("### 📈 Distribución de Gastos: Fijos vs. Variables vs. Inversión")
