@@ -348,6 +348,68 @@ with tab_flujo:
             else:
                 col_f3.error(f"🔴 **FRENO DE MANO**\n\nHas consumido el {porcentaje_gastado:.1f}% del depósito de esta quincena.")
 
+            # --- MÓDULO: ANÁLISIS DE HÁBITOS E INSIGHTS (PUNTO 4) ---
+            st.markdown("---")
+            st.markdown("### 📊 Análisis de Hábitos y Fugas de Dinero")
+
+            col_a1, col_a2 = st.columns(2)
+
+            with col_a1:
+                st.markdown("#### 🚨 Top 3 Fugas del Ciclo Activo")
+                # Filtrar solo egresos del ciclo quincenal actual
+                df_egresos_q = df_flujo[(df_flujo['tipo'] == 'Egreso') & 
+                                        (df_flujo['fecha'] >= inicio_q.normalize()) & 
+                                        (df_flujo['fecha'] <= fin_q.normalize())]
+
+                if not df_egresos_q.empty:
+                    top_categorias = df_egresos_q.groupby('categoria')['monto'].sum().reset_index()
+                    top_categorias = top_categorias.sort_values(by='monto', ascending=False).head(3)
+
+                    for idx, row in top_categorias.iterrows():
+                        pct_cat = (row['monto'] / nomina_ingresada_ciclo * 100) if nomina_ingresada_ciclo > 0 else 0
+                        st.write(f"• **{row['categoria']}**: {fmt_monto(row['monto'])} *({pct_cat:.1f}% de la nómina)*")
+                else:
+                    st.info("Aún no hay egresos registrados en esta quincena.")
+
+            with col_a2:
+                st.markdown("#### 🔄 Comparativa vs. Quincena Anterior")
+                
+                # Buscar en la base de datos para identificar el ciclo anterior
+                df_nominas = df_flujo[
+                    (df_flujo['tipo'] == 'Ingreso') & 
+                    (df_flujo['categoria'].str.contains("Nómina", case=False, na=False))
+                ].sort_values('fecha', ascending=False)
+
+                if len(df_nominas) >= 2:
+                    nomina_anterior = df_nominas.iloc[1]
+                    inicio_q_prev = pd.Timestamp(nomina_anterior['fecha'])
+                    fin_q_prev = inicio_q - pd.Timedelta(days=1)
+
+                    df_q_prev = df_flujo[(df_flujo['fecha'] >= inicio_q_prev.normalize()) & (df_flujo['fecha'] <= fin_q_prev.normalize())]
+                    gastos_previos = df_q_prev[df_q_prev['tipo'] == 'Egreso']['monto'].sum()
+
+                    diferencia = gastos_debito_ciclo - gastos_previos
+                    pct_variacion = ((gastos_debito_ciclo - gastos_previos) / gastos_previos * 100) if gastos_previos > 0 else 0.0
+
+                    if diferencia > 0:
+                        st.metric(
+                            label="Gasto Acumulado Actual vs. Anterior", 
+                            value=fmt_monto(gastos_debito_ciclo), 
+                            delta=f"+{fmt_monto(diferencia)} ({pct_variacion:+.1f}%)",
+                            delta_color="inverse",
+                            help="Estás gastando MÁS que en el mismo punto de la quincena anterior."
+                        )
+                    else:
+                        st.metric(
+                            label="Gasto Acumulado Actual vs. Anterior", 
+                            value=fmt_monto(gastos_debito_ciclo), 
+                            delta=f"{fmt_monto(diferencia)} ({pct_variacion:+.1f}%)",
+                            delta_color="inverse",
+                            help="Estás gastando MENOS que la quincena anterior."
+                        )
+                else:
+                    st.info("Registra al menos dos pagos de nómina para habilitar la comparativa interquincenal.")
+
             st.markdown("---")
 
             # ESTRUCTURA DE GASTOS
