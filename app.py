@@ -553,7 +553,6 @@ with tab_flujo:
             elif porcentaje_gastado <= 90:
                 col_f3.warning(f"🟡 **Precaución**\n\nHas consumido el {porcentaje_gastado:.1f}% de la nómina de esta quincena.")
             else:
-<<<<<<< HEAD
                 col_f3.error(f"🔴 **FRENO DE MANO**\n\nHas consumido el {porcentaje_gastado:.1f}% del depósito de esta quincena.")
 
             # --- MÓDULO: ANÁLISIS DE HÁBITOS E INSIGHTS (PUNTO 4) ---
@@ -618,7 +617,6 @@ with tab_flujo:
                 else:
                     st.info("Registra al menos dos pagos de nómina para habilitar la comparativa interquincenal.")
 
-=======
                 col_f3.error(f"🔴 **FRENO DE MANO**\n\nHas consumido el {porcentaje_gastado:.1f}% de la nómina de esta quincena.")
                 
             st.markdown("---")
