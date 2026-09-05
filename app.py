@@ -9,15 +9,21 @@ import plotly.express as px
 import hashlib
 
 # =============================================================================
-# ZONA HORARIA LOCAL (MÉXICO)
+# CONFIGURACIÓN DE ZONA HORARIA LOCAL (MÉXICO)
 # =============================================================================
 TIMEZONE_MEXICO = ZoneInfo('America/Mexico_City')
 
 def obtener_fecha_local():
+    """
+    Obtiene la fecha actual ajustada explícitamente a la zona horaria de Ciudad de México.
+    
+    Retorna:
+        datetime.date: Fecha actual en México.
+    """
     return datetime.now(TIMEZONE_MEXICO).date()
 
 # =============================================================================
-# 1. CONFIGURACIÓN DE LA PÁGINA STREAMLIT
+# 1. CONFIGURACIÓN INICIAL DE LA PÁGINA STREAMLIT
 # =============================================================================
 st.set_page_config(
     page_title="Finanzas Personales - Control Quincenal e Inversiones",
@@ -26,22 +32,40 @@ st.set_page_config(
 )
 
 # =============================================================================
-# 2. CONTROL DE ACCESO Y AUTENTICACIÓN MULTIUSUARIO (BCRYPT)
+# 2. CONTROL DE ACCESO, AUTENTICACIÓN Y SEGURIDAD MULTIUSUARIO (BCRYPT)
 # =============================================================================
 def get_connection():
+    """
+    Establece y retorna una conexión activa a la base de datos PostgreSQL/Neon 
+    utilizando las credenciales guardadas en st.secrets["DATABASE_URL"].
+    """
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 def generar_hash_password(password: str) -> str:
-    """Genera un hash seguro para la contraseña."""
+    """
+    Genera un hash seguro utilizando el algoritmo Bcrypt y un salt aleatorio.
+
+    Parámetros:
+        password (str): Contraseña en texto plano.
+    Retorna:
+        str: Contraseña encriptada en formato Bcrypt.
+    """
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def verificar_password(password: str, hashed_password: str) -> bool:
     """
-    Verifica la contraseña ingresada soportando:
+    Verifica si una contraseña ingresada coincide con el hash almacenado.
+    Soporta tres esquemas de hashing para mantener retrocompatibilidad:
     1. Bcrypt ($2a$, $2b$)
-    2. SHA-256 (64 caracteres)
-    3. Texto plano (Retrocompatibilidad)
+    2. SHA-256 (64 caracteres hexadecimales)
+    3. Texto plano (Para registros antiguos o migración)
+
+    Parámetros:
+        password (str): Contraseña ingresada por el usuario.
+        hashed_password (str): Hash o texto almacenado en la base de datos.
+    Retorna:
+        bool: True si la contraseña coincide, False en caso contrario.
     """
     if not hashed_password:
         return False
@@ -55,7 +79,7 @@ def verificar_password(password: str, hashed_password: str) -> bool:
         except Exception:
             return False
             
-    # 2. Verificación con SHA-256 (Hashes de 64 caracteres de la versión anterior)
+    # 2. Verificación con SHA-256 (Versión anterior)
     if len(hashed_password) == 64 and not hashed_password.startswith("$"):
         hash_ingresado = hashlib.sha256(password.encode('utf-8')).hexdigest()
         return hash_ingresado.lower() == hashed_password.lower()
@@ -64,6 +88,15 @@ def verificar_password(password: str, hashed_password: str) -> bool:
     return password == hashed_password
 
 def validar_usuario_db(username, password):
+    """
+    Consulta la base de datos para autenticar al usuario ingresado.
+
+    Parámetros:
+        username (str): Nombre de usuario.
+        password (str): Contraseña en texto plano.
+    Retorna:
+        tuple | None: Tupla (user_id, user_name) si las credenciales son válidas; None si falla.
+    """
     conn = None
     try:
         conn = get_connection()
@@ -91,18 +124,27 @@ def validar_usuario_db(username, password):
             conn.close()
             
 def registrar_usuario_db(username, password, nombre):
-    """Inserta un nuevo usuario en la base de datos PostgreSQL/Neon."""
+    """
+    Inserta un nuevo usuario en la base de datos PostgreSQL, encriptando la contraseña con Bcrypt.
+
+    Parámetros:
+        username (str): Alias/identificador único del usuario.
+        password (str): Contraseña elegida.
+        nombre (str): Nombre completo o visible del usuario.
+    Retorna:
+        tuple (bool, str): (Estado de éxito, Mensaje informativo)
+    """
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
         
-        # Verificar si el usuario ya existe
+        # Validar disponibilidad del username
         cur.execute("SELECT id FROM usuarios WHERE LOWER(username) = %s;", (username.lower().strip(),))
         if cur.fetchone():
             return False, "El nombre de usuario ya existe. Intenta con otro."
         
-        # Encriptar y guardar incluyendo el campo 'nombre'
+        # Hashear la contraseña e insertar registro
         pass_hash = generar_hash_password(password)
         cur.execute(
             "INSERT INTO usuarios (username, nombre, password_hash) VALUES (%s, %s, %s);",
@@ -121,6 +163,10 @@ def registrar_usuario_db(username, password, nombre):
             conn.close()
             
 def mostrar_login():
+    """
+    Renders the custom CSS login interface with glassmorphism design and dual tabs
+    (Login and Register). Controls session initiation.
+    """
     st.markdown("""
         <style>
         .stApp {
@@ -180,7 +226,6 @@ def mostrar_login():
             box-shadow: 0 8px 20px rgba(0,0,0,0.3) !important;
         }
 
-        /* Estilo para las pestañas dentro del login */
         .stTabs [data-baseweb="tab-list"] {
             gap: 10px;
             justify-content: center;
@@ -246,7 +291,7 @@ def mostrar_login():
                         else:
                             st.error(msj)
 
-# --- CONTROL DE SESIÓN ---
+# --- VERIFICACIÓN Y CONTROL DE ESTADO DE SESIÓN ---
 if "autenticado" not in st.session_state:
     st.session_state["autenticado"] = False
 
@@ -260,15 +305,16 @@ if not USER_ID:
     st.warning("Sesión no válida. Por favor, vuelve a iniciar sesión.")
     st.stop()
 
-# 🔍 DIAGNÓSTICO EN TIEMPO REAL
+# Diagnóstico de usuario activo en sidebar
 st.sidebar.error(f"👤 Usuario: {st.session_state.get('username')}")
 st.sidebar.error(f"🆔 ID en sesión: {st.session_state.get('user_id')}")
 
 # =============================================================================
-# 3. SIDEBAR Y MODO PRIVACIDAD
+# 3. SIDEBAR, MODO PRIVACIDAD Y UTILIDADES
 # =============================================================================
 st.sidebar.title(f"👤 Dashboard — {st.session_state.get('username', 'Usuario')}")
 
+# Interruptor para ocultar montos confidenciales
 ocultar_saldos = st.sidebar.toggle(
     "🙈 Modo Privacidad", 
     value=False, 
@@ -282,14 +328,19 @@ if st.sidebar.button("Cerrar Sesión"):
     st.rerun()
 
 def fmt_monto(valor):
+    """
+    Formatea un valor numérico como moneda ($0,000.00). Si el Modo Privacidad está activo,
+    enmascara la cifra con caracteres ocultos.
+    """
     if ocultar_saldos:
         return "$ ••••••"
     return f"${valor:,.2f}"
 
 # =============================================================================
-# 4. CAPA DE BASE DE DATOS (POSTGRESQL MULTIUSUARIO)
+# 4. CAPA DE BASE DE DATOS (CRUD POSTGRESQL MULTIUSUARIO)
 # =============================================================================
 def obtener_movimientos(user_id):
+    """Recupera todos los registros financieros pertenecientes al usuario activo."""
     conn = None
     try:
         conn = get_connection()
@@ -309,6 +360,7 @@ def obtener_movimientos(user_id):
             conn.close()
 
 def guardar_movimiento(tipo, monto, categoria, descripcion, fecha, user_id):
+    """Inserta un nuevo movimiento (Ingreso, Egreso, Retiro, Inversión) en la base de datos."""
     conn = None
     try:
         conn = get_connection()
@@ -334,6 +386,7 @@ def guardar_movimiento(tipo, monto, categoria, descripcion, fecha, user_id):
             conn.close()
 
 def eliminar_movimiento(id_mov, user_id):
+    """Elimina permanentemente un registro validando la propiedad del user_id."""
     conn = None
     try:
         conn = get_connection()
@@ -353,6 +406,7 @@ def eliminar_movimiento(id_mov, user_id):
             conn.close()
 
 def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fecha, user_id):
+    """Actualiza la información de un movimiento existente perteniciente al usuario."""
     conn = None
     try:
         conn = get_connection()
@@ -375,8 +429,12 @@ def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fe
         if conn:
             conn.close()
 
+# Alias para la gestión de efectividad/billetera
+actualizar_movimiento_db = actualizar_movimiento
+eliminar_movimiento_db = eliminar_movimiento
+
 # =============================================================================
-# 5. ESTRUCTURA PRINCIPAL DEL DASHBOARD
+# 5. ESTRUCTURA PRINCIPAL DEL DASHBOARD (PESTAÑAS)
 # =============================================================================
 st.title("💰 Control de Finanzas e Inversiones")
 
@@ -392,6 +450,7 @@ tab_flujo, tab_ahorros, tab_presupuesto, tab_efectivo = st.tabs([
 # =============================================================================
 with tab_flujo:
     
+    # --- FORMULARIO DE REGISTRO RÁPIDO DE MOVIMIENTOS ---
     with st.expander("➕ Registrar Movimiento de Nómina, Gastos o Retiros", expanded=True):
         tipo = st.selectbox(
             "Tipo de Movimiento", 
@@ -399,6 +458,7 @@ with tab_flujo:
             key="selector_tipo_movimiento"
         )
         
+        # Filtrado dinámico de categorías según el tipo seleccionado
         if tipo == "Ingreso":
             categorias_dinamicas = [
                 "Nómina / Sueldo Quincenal", 
@@ -454,6 +514,7 @@ with tab_flujo:
     df_raw = obtener_movimientos(USER_ID)
 
     if not df_raw.empty:
+        # Excluir registros de inversión de la pestaña de flujo regular
         mask_inversion = df_raw['categoria'].str.contains("inversi", case=False, na=False) | \
                          df_raw['tipo'].str.contains("inversi", case=False, na=False)
         
@@ -468,40 +529,38 @@ with tab_flujo:
 
             st.markdown("### 📅 Ciclo de Nómina Actual")
             
-            # --- REGLA DINÁMICA POR ÚLTIMA NÓMINA REGISTRADA ---
+            # --- DETERMINACIÓN DEL CICLO ACTIVO POR ÚLTIMA NÓMINA REGISTRADA ---
             df_nominas = df_flujo[
                 (df_flujo['tipo'] == 'Ingreso') & 
                 (df_flujo['categoria'].str.contains("Nómina", case=False, na=False))
             ].sort_values('fecha', ascending=False)
 
             if not df_nominas.empty:
-                # La fecha de inicio es el día que ingresó el último pago de nómina
+                # El ciclo activo inicia el día del último pago registrado
                 ultima_nomina = df_nominas.iloc[0]
                 inicio_q = pd.Timestamp(ultima_nomina['fecha'])
                 nomina_ingresada_ciclo = float(ultima_nomina['monto'])
                 etiqueta_q = f"Ciclo Activo (Nómina del {inicio_q.strftime('%d/%m/%Y')})"
             else:
-                # Regla de respaldo si aún no hay nóminas registradas en el sistema
                 inicio_q = hoy_ts.replace(day=1)
                 nomina_ingresada_ciclo = 0.0
                 etiqueta_q = "Ciclo Inicial (Sin registro de nómina)"
 
-            # El ciclo abarca desde el día del último pago registrado hasta hoy
             fin_q = hoy_ts 
 
-            # Filtrar los movimientos que corresponden a este ciclo activo
+            # Movimientos del ciclo activo
             df_q_actual = df_flujo[(df_flujo['fecha'] >= inicio_q.normalize()) & (df_flujo['fecha'] <= fin_q.normalize())]
             
-            # --- CÁLCULOS ACUMULADOS HISTÓRICOS ---
+            # --- CÁLCULOS HISTÓRICOS Y DISPONIBILIDAD REAL EN DÉBITO ---
             mask_debito_global = df_flujo['descripcion'].str.contains("Débito", na=False) | (~df_flujo['descripcion'].str.contains("Efectivo", na=False))
             ingresos_totales_historicos = df_flujo[df_flujo['tipo'] == 'Ingreso']['monto'].sum()
             gastos_debito_historicos = df_flujo[(df_flujo['tipo'] == 'Egreso') & mask_debito_global]['monto'].sum()
             retiros_historicos = df_flujo[df_flujo['tipo'] == 'Retiro']['monto'].sum()
             
-            # Saldo disponible real en la cuenta de débito
+            # Saldo bancario real
             nomina_restante = ingresos_totales_historicos - gastos_debito_historicos - retiros_historicos
 
-            # Gastos del ciclo actual
+            # Métricas del ciclo quincenal actual
             mask_debito_q = df_q_actual['descripcion'].str.contains("Débito", na=False) | (~df_q_actual['descripcion'].str.contains("Efectivo", na=False))
             gastos_debito_ciclo = df_q_actual[(df_q_actual['tipo'] == 'Egreso') & mask_debito_q]['monto'].sum()
             gastos_efectivo_ciclo = df_q_actual[(df_q_actual['tipo'] == 'Egreso') & df_q_actual['descripcion'].str.contains("Efectivo", na=False)]['monto'].sum()
@@ -514,10 +573,9 @@ with tab_flujo:
             col_q3.metric("💵 Gastos en Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
             col_q4.metric("🏦 Nómina Recibida", fmt_monto(nomina_ingresada_ciclo))
 
-            # --- PROYECTAR PRÓXIMA META OFICIAL DE CALENDARIO (15 O FIN DE MES) ---
+            # --- CÁLCULO DE PROYECCIÓN AL PRÓXIMO PAGO ---
             dia_pago = inicio_q.day
 
-            # Si el pago ingresó a fin de mes/inicios de mes (días 25 a 5), la meta del próximo pago es el 15
             if dia_pago >= 25 or dia_pago <= 5:
                 if inicio_q.day >= 25:
                     mes_target = inicio_q.month + 1 if inicio_q.month < 12 else 1
@@ -525,16 +583,13 @@ with tab_flujo:
                     fecha_estimada_fin = pd.Timestamp(year=anio_target, month=mes_target, day=15)
                 else:
                     fecha_estimada_fin = inicio_q.replace(day=15)
-            # Si el pago ingresó en quincena (días 6 a 24), la meta es el último día del mes
             else:
                 proximo_mes = (inicio_q.replace(day=28) + pd.Timedelta(days=4))
                 fecha_estimada_fin = proximo_mes.replace(day=1) - pd.Timedelta(days=1)
 
-            # Días faltantes reales hasta la fecha meta
             dias_restantes = max((fecha_estimada_fin.date() - hoy_date).days + 1, 1)
             gasto_diario_sugerido = nomina_restante / dias_restantes if nomina_restante > 0 else 0.00
 
-            # --- PORCENTAJE SEGURO BASADO EN LA NÓMINA ACTIVA ---
             if nomina_ingresada_ciclo > 0:
                 porcentaje_gastado = (gastos_debito_ciclo / nomina_ingresada_ciclo) * 100
             else:
@@ -555,7 +610,7 @@ with tab_flujo:
             else:
                 col_f3.error(f"🔴 **FRENO DE MANO**\n\nHas consumido el {porcentaje_gastado:.1f}% del depósito de esta quincena.")
 
-            # --- MÓDULO: ANÁLISIS DE HÁBITOS E INSIGHTS (PUNTO 4) ---
+            # --- ANÁLISIS DE HÁBITOS Y COMPARATIVAS ---
             st.markdown("---")
             st.markdown("### 📊 Análisis de Hábitos y Fugas de Dinero")
 
@@ -563,7 +618,6 @@ with tab_flujo:
 
             with col_a1:
                 st.markdown("#### 🚨 Top 3 Fugas del Ciclo Activo")
-                # Filtrar solo egresos del ciclo quincenal actual
                 df_egresos_q = df_flujo[(df_flujo['tipo'] == 'Egreso') & 
                                         (df_flujo['fecha'] >= inicio_q.normalize()) & 
                                         (df_flujo['fecha'] <= fin_q.normalize())]
@@ -581,12 +635,6 @@ with tab_flujo:
             with col_a2:
                 st.markdown("#### 🔄 Comparativa vs. Quincena Anterior")
                 
-                # Buscar en la base de datos para identificar el ciclo anterior
-                df_nominas = df_flujo[
-                    (df_flujo['tipo'] == 'Ingreso') & 
-                    (df_flujo['categoria'].str.contains("Nómina", case=False, na=False))
-                ].sort_values('fecha', ascending=False)
-
                 if len(df_nominas) >= 2:
                     nomina_anterior = df_nominas.iloc[1]
                     inicio_q_prev = pd.Timestamp(nomina_anterior['fecha'])
@@ -619,6 +667,7 @@ with tab_flujo:
                 
             st.markdown("---")
 
+            # --- GRÁFICOS Y DISTRIBUCIÓN DE GASTO ---
             st.markdown("### 📈 Distribución de Gastos: Fijos vs. Variables vs. Inversión")
 
             categorias_fijas = [
@@ -752,6 +801,7 @@ with tab_flujo:
 
             st.markdown("---")
 
+            # --- TABLA DE HISTORIAL Y EDICIÓN ---
             st.markdown("### 📋 Historial Completo de Nómina y Gastos")
             df_display = df_flujo.copy()
             df_display['fecha_str'] = df_display['fecha'].dt.strftime('%Y-%m-%d')
@@ -847,6 +897,7 @@ with tab_ahorros:
 
     current_user_id = st.session_state.get("user_id")
 
+    # --- FORMULARIO PARA REGISTRAR/ACTUALIZAR INVERSIONES ---
     with st.expander("➕ Registrar / Actualizar Saldo de Inversión", expanded=True):
         with st.form("form_inversiones", clear_on_submit=True):
             col_inv1, col_inv2, col_inv3 = st.columns(3)
@@ -887,6 +938,7 @@ with tab_ahorros:
     df_raw = obtener_movimientos(current_user_id)
     
     if not df_raw.empty:
+        # Filtrado especializado en instrumentos de inversión
         plataformas_conocidas = ["fintual", "cetes", "nu", "finsus", "mercado pago", "gbm", "emergencia"]
         mask_inv = (
             df_raw['categoria'].str.contains("inversi", case=False, na=False) |
@@ -897,6 +949,7 @@ with tab_ahorros:
         df_inversiones = df_raw[mask_inv].copy()
         
         if not df_inversiones.empty:
+            # Extraer metadata (Tasa %, Nombre de Plataforma) codificada en las descripciones
             def extraer_datos_inv(row):
                 cat = str(row['categoria'])
                 desc = str(row['descripcion'])
@@ -926,6 +979,7 @@ with tab_ahorros:
 
             resumen_filas = []
 
+            # Calcular rendimientos por plataforma agrupada
             for plat, group in df_inversiones.groupby('Plataforma'):
                 ultimos_registros = group.tail(2)
                 registro_actual = ultimos_registros.iloc[-1]
@@ -994,6 +1048,7 @@ with tab_ahorros:
             st.caption(f"Progreso global hacia la meta de **{fmt_monto(META_INVERSION_TOTAL)}**")
             st.progress(progreso_pct / 100.0)
 
+            # Tarjetas individuales de avance de metas
             st.markdown("#### 🎯 Progreso de Metas Específicas")
             cols_m = st.columns(len(METAS_PLATAFORMA))
 
@@ -1136,6 +1191,7 @@ with tab_presupuesto:
         ingreso_mensual_total = ingreso_q1 + ingreso_q2
         st.info(f"💡 **Ingreso Total Estimado del Mes:** {fmt_monto(ingreso_mensual_total)}")
 
+    # Cálculo de límites teóricos según la regla 50/30/20
     limite_necesidades = ingreso_mensual_total * 0.50
     limite_deseos = ingreso_mensual_total * 0.30
     limite_ahorro = ingreso_mensual_total * 0.20
@@ -1161,6 +1217,7 @@ with tab_presupuesto:
 
     st.markdown("---")
 
+    # Comparativa entre presupuesto y gasto real consumido durante el mes
     if not df_raw.empty:
         df_raw['fecha'] = pd.to_datetime(df_raw['fecha'])
         
@@ -1217,6 +1274,7 @@ with tab_presupuesto:
 
     st.markdown("---")
 
+    # Guía de estrategia de flujo de efectivo por quincena
     st.markdown("### 🗓️ Estrategia de Flujo de Caja Quincenal")
     st.caption("Nivelación de compromisos entre la 1.ª y 2.ª Quincena.")
 
@@ -1259,7 +1317,7 @@ with tab_efectivo:
     col_ef1, col_ef2 = st.columns(2)
 
     # -------------------------------------------------------------------------
-    # 1. ENTRADA DE EFECTIVO / AJUSTE
+    # 1. REGISTRO DE ENTRADA DE EFECTIVO / AJUSTE DE SALDO
     # -------------------------------------------------------------------------
     with col_ef1:
         st.subheader("1. 📥 Entrada de Efectivo / Ajuste")
@@ -1292,7 +1350,7 @@ with tab_efectivo:
                 st.rerun()
 
     # -------------------------------------------------------------------------
-    # 2. SALIDA DE EFECTIVO / GASTOS
+    # 2. REGISTRO DE SALIDA Y GASTOS EN EFECTIVO
     # -------------------------------------------------------------------------
     with col_ef2:
         st.subheader("2. 💸 Registrar Gasto Realizado en Efectivo")
@@ -1322,7 +1380,7 @@ with tab_efectivo:
     st.markdown("---")
 
     # -------------------------------------------------------------------------
-    # 3. METRICAS Y TABLA DE HISTORIAL EXCLUSIVO DE EFECTIVO
+    # 3. BALANCE Y TABLA DE HISTORIAL EXCLUSIVO DE EFECTIVO
     # -------------------------------------------------------------------------
     df_raw_efectivo = obtener_movimientos(USER_ID)
 
@@ -1373,7 +1431,7 @@ with tab_efectivo:
                 st.dataframe(df_hist_efectivo[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_ef_cols, use_container_width=True, hide_index=True)
 
             # -----------------------------------------------------------------
-            # 4. EDICIÓN / ELIMINACIÓN CON OPCIÓN DE CANCELAR
+            # 4. GESTIÓN Y EDICIÓN/ELIMINACIÓN SEGURO CON CONFIRMACIÓN
             # -----------------------------------------------------------------
             st.markdown("---")
             st.markdown("### 🛠️ Modificar o Eliminar Registro de Efectivo")
@@ -1381,10 +1439,8 @@ with tab_efectivo:
             lista_ids_efectivo = df_hist_efectivo['id'].tolist()
             id_sel_ef = st.selectbox("Selecciona el ID del registro a gestionar:", lista_ids_efectivo, key="sb_id_efectivo")
             
-            # Obtener datos del registro seleccionado
             row_sel_ef = df_hist_efectivo[df_hist_efectivo['id'] == id_sel_ef].iloc[0]
             
-            # Inicializar estado para mostrar/ocultar el panel de modificación
             if "mostrar_edit_ef" not in st.session_state:
                 st.session_state.mostrar_edit_ef = False
 
@@ -1395,11 +1451,10 @@ with tab_efectivo:
                     st.session_state.mostrar_edit_ef = True
 
             with col_btn2:
-                # Confirmación previa de eliminación para evitar borrados accidentales
                 if st.button("🗑️ Eliminar Registro", use_container_width=True, type="secondary", key="btn_del_ef"):
                     st.session_state.confirmar_del_ef = True
 
-            # Diálogo / Alerta de Confirmación de Borrado
+            # Cuadro de confirmación previa para evitar pérdidas accidentales
             if st.session_state.get("confirmar_del_ef", False):
                 st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar el registro ID **{id_sel_ef}** ({row_sel_ef['descripcion']} - {fmt_monto(row_sel_ef['monto'])})?")
                 c_del_confirm, c_del_cancel = st.columns(2)
@@ -1417,7 +1472,7 @@ with tab_efectivo:
                         st.info("Operación de eliminación cancelada.")
                         st.rerun()
 
-            # Formulario desplegable para Edición con botón de Cancelar
+            # Formulario desplegable para la edición
             if st.session_state.mostrar_edit_ef:
                 st.info(f"Editando registro ID #{id_sel_ef}")
                 with st.form("form_editar_efectivo"):
