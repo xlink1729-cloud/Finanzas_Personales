@@ -616,8 +616,6 @@ with tab_flujo:
                         )
                 else:
                     st.info("Registra al menos dos pagos de nómina para habilitar la comparativa interquincenal.")
-
-                col_f3.error(f"🔴 **FRENO DE MANO**\n\nHas consumido el {porcentaje_gastado:.1f}% de la nómina de esta quincena.")
                 
             st.markdown("---")
 
