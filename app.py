@@ -801,11 +801,40 @@ with tab_flujo:
 
             st.markdown("---")
 
-            # --- TABLA DE HISTORIAL Y EDICIÓN ---
+            # --- TABLA DE HISTORIAL Y FILTROS EN FLUJO ---
             st.markdown("### 📋 Historial Completo de Nómina y Gastos")
             df_display = df_flujo.copy()
             df_display['fecha_str'] = df_display['fecha'].dt.strftime('%Y-%m-%d')
             
+            # --- SECCIÓN DE FILTROS PARA FLUJO ---
+            with st.expander("🔍 Filtros de Búsqueda", expanded=False):
+                col_f_flujo1, col_f_flujo2, col_f_flujo3 = st.columns(3)
+                
+                with col_f_flujo1:
+                    min_fecha_f = df_display['fecha'].min().date()
+                    max_fecha_f = df_display['fecha'].max().date()
+                    f_rango = st.date_input("Rango de Fechas", [min_fecha_f, max_fecha_f], key="f_rango_flujo")
+                    
+                with col_f_flujo2:
+                    tipos_disponibles = ["Todos"] + list(df_display['tipo'].unique())
+                    f_tipo = st.selectbox("Tipo de Movimiento", tipos_disponibles, key="f_tipo_flujo")
+                    
+                with col_f_flujo3:
+                    f_texto = st.text_input("Buscar en Descripción / Categoría", "", key="f_texto_flujo")
+
+            # Aplicar filtros a df_display
+            if isinstance(f_rango, (list, tuple)) and len(f_rango) == 2:
+                df_display = df_display[(df_display['fecha'].dt.date >= f_rango[0]) & (df_display['fecha'].dt.date <= f_rango[1])]
+            
+            if f_tipo != "Todos":
+                df_display = df_display[df_display['tipo'] == f_tipo]
+                
+            if f_texto:
+                df_display = df_display[
+                    df_display['descripcion'].str.contains(f_texto, case=False, na=False) |
+                    df_display['categoria'].str.contains(f_texto, case=False, na=False)
+                ]
+
             config_columnas = {
                 "id": st.column_config.NumberColumn("ID", format="%d"),
                 "fecha_str": "Fecha",
@@ -1106,10 +1135,37 @@ with tab_ahorros:
 
             st.markdown("---")
 
+            # --- TABLA Y FILTROS EN INVERSIONES ---
             st.markdown("#### 📋 Historial de Registros de Inversión")
             df_inv_disp = df_inversiones[['id', 'fecha', 'Plataforma', 'Tasa (%)', 'monto', 'descripcion']].sort_values(by='fecha', ascending=False).copy()
             df_inv_disp['fecha_str'] = df_inv_disp['fecha'].dt.strftime('%Y-%m-%d')
             
+            # --- SECCIÓN DE FILTROS PARA INVERSIONES ---
+            with st.expander("🔍 Filtros de Inversión", expanded=False):
+                col_fi1, col_fi2, col_fi3 = st.columns(3)
+                
+                with col_fi1:
+                    min_fecha_inv = df_inv_disp['fecha'].min().date()
+                    max_fecha_inv = df_inv_disp['fecha'].max().date()
+                    f_rango_inv = st.date_input("Rango de Fechas", [min_fecha_inv, max_fecha_inv], key="f_rango_inv")
+                    
+                with col_fi2:
+                    plats_disponibles = ["Todas"] + list(df_inv_disp['Plataforma'].unique())
+                    f_plat_inv = st.selectbox("Plataforma", plats_disponibles, key="f_plat_inv")
+                    
+                with col_fi3:
+                    f_texto_inv = st.text_input("Buscar en Notas", "", key="f_texto_inv")
+
+            # Aplicar filtros a df_inv_disp
+            if isinstance(f_rango_inv, (list, tuple)) and len(f_rango_inv) == 2:
+                df_inv_disp = df_inv_disp[(df_inv_disp['fecha'].dt.date >= f_rango_inv[0]) & (df_inv_disp['fecha'].dt.date <= f_rango_inv[1])]
+                
+            if f_plat_inv != "Todas":
+                df_inv_disp = df_inv_disp[df_inv_disp['Plataforma'] == f_plat_inv]
+                
+            if f_texto_inv:
+                df_inv_disp = df_inv_disp[df_inv_disp['descripcion'].str.contains(f_texto_inv, case=False, na=False)]
+
             config_inv_cols = {
                 "id": st.column_config.NumberColumn("ID", format="%d"),
                 "fecha_str": "Fecha",
@@ -1412,8 +1468,41 @@ with tab_efectivo:
         df_hist_efectivo = df_raw_efectivo[mask_movs_efectivo].copy()
 
         if not df_hist_efectivo.empty:
-            df_hist_efectivo['fecha_str'] = pd.to_datetime(df_hist_efectivo['fecha']).dt.strftime('%Y-%m-%d')
+            df_hist_efectivo['fecha_dt'] = pd.to_datetime(df_hist_efectivo['fecha'])
+            df_hist_efectivo['fecha_str'] = df_hist_efectivo['fecha_dt'].dt.strftime('%Y-%m-%d')
             
+            # --- SECCIÓN DE FILTROS PARA EFECTIVO ---
+            with st.expander("🔍 Filtros de Efectivo", expanded=False):
+                col_fe1, col_fe2, col_fe3 = st.columns(3)
+                
+                with col_fe1:
+                    min_fecha_ef = df_hist_efectivo['fecha_dt'].min().date()
+                    max_fecha_ef = df_hist_efectivo['fecha_dt'].max().date()
+                    f_rango_ef = st.date_input("Rango de Fechas", [min_fecha_ef, max_fecha_ef], key="f_rango_ef")
+                    
+                with col_fe2:
+                    tipos_efectivo = ["Todos"] + list(df_hist_efectivo['tipo'].unique())
+                    f_tipo_ef = st.selectbox("Tipo de Operación", tipos_efectivo, key="f_tipo_ef")
+                    
+                with col_fe3:
+                    f_texto_ef = st.text_input("Buscar en Detalle / Categoría", "", key="f_texto_ef")
+
+            # Aplicar filtros a df_hist_efectivo
+            if isinstance(f_rango_ef, (list, tuple)) and len(f_rango_ef) == 2:
+                df_hist_efectivo = df_hist_efectivo[
+                    (df_hist_efectivo['fecha_dt'].dt.date >= f_rango_ef[0]) & 
+                    (df_hist_efectivo['fecha_dt'].dt.date <= f_rango_ef[1])
+                ]
+                
+            if f_tipo_ef != "Todos":
+                df_hist_efectivo = df_hist_efectivo[df_hist_efectivo['tipo'] == f_tipo_ef]
+                
+            if f_texto_ef:
+                df_hist_efectivo = df_hist_efectivo[
+                    df_hist_efectivo['descripcion'].str.contains(f_texto_ef, case=False, na=False) |
+                    df_hist_efectivo['categoria'].str.contains(f_texto_ef, case=False, na=False)
+                ]
+
             config_ef_cols = {
                 "id": st.column_config.NumberColumn("ID", format="%d"),
                 "fecha_str": "Fecha",
@@ -1437,66 +1526,69 @@ with tab_efectivo:
             st.markdown("### 🛠️ Modificar o Eliminar Registro de Efectivo")
             
             lista_ids_efectivo = df_hist_efectivo['id'].tolist()
-            id_sel_ef = st.selectbox("Selecciona el ID del registro a gestionar:", lista_ids_efectivo, key="sb_id_efectivo")
-            
-            row_sel_ef = df_hist_efectivo[df_hist_efectivo['id'] == id_sel_ef].iloc[0]
-            
-            if "mostrar_edit_ef" not in st.session_state:
-                st.session_state.mostrar_edit_ef = False
-
-            col_btn1, col_btn2 = st.columns(2)
-            
-            with col_btn1:
-                if st.button("✏️ Editar Registro", use_container_width=True, key="btn_abrir_edit_ef"):
-                    st.session_state.mostrar_edit_ef = True
-
-            with col_btn2:
-                if st.button("🗑️ Eliminar Registro", use_container_width=True, type="secondary", key="btn_del_ef"):
-                    st.session_state.confirmar_del_ef = True
-
-            # Cuadro de confirmación previa para evitar pérdidas accidentales
-            if st.session_state.get("confirmar_del_ef", False):
-                st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar el registro ID **{id_sel_ef}** ({row_sel_ef['descripcion']} - {fmt_monto(row_sel_ef['monto'])})?")
-                c_del_confirm, c_del_cancel = st.columns(2)
+            if lista_ids_efectivo:
+                id_sel_ef = st.selectbox("Selecciona el ID del registro a gestionar:", lista_ids_efectivo, key="sb_id_efectivo")
                 
-                with c_del_confirm:
-                    if st.button("🔴 Sí, Eliminar Definitivamente", use_container_width=True, type="primary"):
-                        if eliminar_movimiento_db(id_sel_ef, USER_ID):
-                            st.session_state.confirmar_del_ef = False
-                            st.success("✅ Registro eliminado correctamente.")
-                            st.rerun()
-                            
-                with c_del_cancel:
-                    if st.button("❌ Cancelar Eliminación", use_container_width=True):
-                        st.session_state.confirmar_del_ef = False
-                        st.info("Operación de eliminación cancelada.")
-                        st.rerun()
+                row_sel_ef = df_hist_efectivo[df_hist_efectivo['id'] == id_sel_ef].iloc[0]
+                
+                if "mostrar_edit_ef" not in st.session_state:
+                    st.session_state.mostrar_edit_ef = False
 
-            # Formulario desplegable para la edición
-            if st.session_state.mostrar_edit_ef:
-                st.info(f"Editando registro ID #{id_sel_ef}")
-                with st.form("form_editar_efectivo"):
-                    e_monto = st.number_input("Monto ($)", value=float(row_sel_ef['monto']), min_value=0.01, step=10.0, format="%.2f")
-                    e_fecha = st.date_input("Fecha", pd.to_datetime(row_sel_ef['fecha']).date())
-                    e_categoria = st.text_input("Categoría", value=str(row_sel_ef['categoria']))
-                    e_desc = st.text_input("Descripción / Detalle", value=str(row_sel_ef['descripcion']))
+                col_btn1, col_btn2 = st.columns(2)
+                
+                with col_btn1:
+                    if st.button("✏️ Editar Registro", use_container_width=True, key="btn_abrir_edit_ef"):
+                        st.session_state.mostrar_edit_ef = True
+
+                with col_btn2:
+                    if st.button("🗑️ Eliminar Registro", use_container_width=True, type="secondary", key="btn_del_ef"):
+                        st.session_state.confirmar_del_ef = True
+
+                # Cuadro de confirmación previa para evitar pérdidas accidental
+                if st.session_state.get("confirmar_del_ef", False):
+                    st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar el registro ID **{id_sel_ef}** ({row_sel_ef['descripcion']} - {fmt_monto(row_sel_ef['monto'])})?")
+                    c_del_confirm, c_del_cancel = st.columns(2)
                     
-                    c_edit_save, c_edit_cancel = st.columns(2)
-                    with c_edit_save:
-                        submit_edit = st.form_submit_button("💾 Guardar Cambios", use_container_width=True, type="primary")
-                    with c_edit_cancel:
-                        cancel_edit = st.form_submit_button("❌ Cancelar Modificación", use_container_width=True)
-
-                    if submit_edit:
-                        if actualizar_movimiento_db(id_sel_ef, row_sel_ef['tipo'], e_monto, e_categoria, e_desc, e_fecha, USER_ID):
-                            st.session_state.mostrar_edit_ef = False
-                            st.success("✅ Registro actualizado con éxito.")
+                    with c_del_confirm:
+                        if st.button("🔴 Sí, Eliminar Definitivamente", use_container_width=True, type="primary"):
+                            if eliminar_movimiento_db(id_sel_ef, USER_ID):
+                                st.session_state.confirmar_del_ef = False
+                                st.success("✅ Registro eliminado correctamente.")
+                                st.rerun()
+                                
+                    with c_del_cancel:
+                        if st.button("❌ Cancelar Eliminación", use_container_width=True):
+                            st.session_state.confirmar_del_ef = False
+                            st.info("Operación de eliminación cancelada.")
                             st.rerun()
-                            
-                    if cancel_edit:
-                        st.session_state.mostrar_edit_ef = False
-                        st.info("Modificación cancelada.")
-                        st.rerun()
+
+                # Formulario desplegable para la edición
+                if st.session_state.mostrar_edit_ef:
+                    st.info(f"Editando registro ID #{id_sel_ef}")
+                    with st.form("form_editar_efectivo"):
+                        e_monto = st.number_input("Monto ($)", value=float(row_sel_ef['monto']), min_value=0.01, step=10.0, format="%.2f")
+                        e_fecha = st.date_input("Fecha", pd.to_datetime(row_sel_ef['fecha']).date())
+                        e_categoria = st.text_input("Categoría", value=str(row_sel_ef['categoria']))
+                        e_desc = st.text_input("Descripción / Detalle", value=str(row_sel_ef['descripcion']))
+                        
+                        c_edit_save, c_edit_cancel = st.columns(2)
+                        with c_edit_save:
+                            submit_edit = st.form_submit_button("💾 Guardar Cambios", use_container_width=True, type="primary")
+                        with c_edit_cancel:
+                            cancel_edit = st.form_submit_button("❌ Cancelar Modificación", use_container_width=True)
+
+                        if submit_edit:
+                            if actualizar_movimiento_db(id_sel_ef, row_sel_ef['tipo'], e_monto, e_categoria, e_desc, e_fecha, USER_ID):
+                                st.session_state.mostrar_edit_ef = False
+                                st.success("✅ Registro actualizado con éxito.")
+                                st.rerun()
+                                
+                        if cancel_edit:
+                            st.session_state.mostrar_edit_ef = False
+                            st.info("Modificación cancelada.")
+                            st.rerun()
+            else:
+                st.info("No hay registros que coincidan con los filtros seleccionados.")
 
         else:
             st.info("Aún no tienes movimientos registrados en efectivo.")
