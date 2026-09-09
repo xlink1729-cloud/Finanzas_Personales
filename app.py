@@ -336,6 +336,9 @@ def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fe
     finally:
         if conn: conn.close()
 
+# Añade esta línea para que coincida con la línea 1164 de tu app.py
+actualizar_movimiento_db = actualizar_movimiento
+
 # =============================================================================
 # 5. ESTRUCTURA PRINCIPAL DEL DASHBOARD
 # =============================================================================
