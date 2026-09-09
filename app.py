@@ -663,11 +663,11 @@ with tab_flujo:
                                     st.success("✅ Registro actualizado.")
                                     st.rerun()
 
-                        with col_edit2:
+                    with col_edit2:
                         st.markdown("#### 🗑️ Eliminar")
-                        # Usamos user_id en minúsculas (o st.session_state.get('user_id'))
                         if st.button("❌ Borrar Registro", use_container_width=True):
-                            if eliminar_movimiento(id_seleccionado, user_id):
+                            # Usamos USER_ID en mayúsculas como en el resto de tu pestaña
+                            if eliminar_movimiento(id_seleccionado, USER_ID):
                                 st.success("✅ Registro eliminado.")
                                 st.rerun()
         else:
