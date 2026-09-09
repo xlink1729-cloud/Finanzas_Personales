@@ -1124,7 +1124,7 @@ with tab_efectivo:
                     
                     with c_del_confirm:
                         if st.button("🔴 Sí, Eliminar Definitivamente", use_container_width=True, type="primary"):
-                            if eliminar_movimiento_db(id_sel_ef, USER_ID):
+                            if eliminar_movimiento(id_sel_ef, USER_ID):
                                 st.session_state.confirmar_del_ef = False
                                 st.success("✅ Registro eliminado correctamente.")
                                 st.rerun()
