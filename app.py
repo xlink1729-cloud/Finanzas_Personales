@@ -295,10 +295,10 @@ def guardar_movimiento(tipo, monto, categoria, descripcion, fecha, user_id):
         if conn: conn.close()
 
 def eliminar_movimiento(id_mov, user_id):
-    "Elimina un registro de la tabla de transacciones por su ID y usuario."
+    """Elimina un registro de la tabla de movimientos por su ID y usuario."""
     try:
-        # Reemplaza 'transacciones' o 'movimientos' por el nombre exacto de tu tabla
-        query = "DELETE FROM transacciones WHERE id = %s AND user_id = %s"
+        # Usamos el nombre exacto de tu tabla: movimientos
+        query = "DELETE FROM movimientos WHERE id = %s AND user_id = %s"
         execute_db(query, (id_mov, user_id))
         return True
     except Exception as e:
