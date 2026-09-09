@@ -295,21 +295,15 @@ def guardar_movimiento(tipo, monto, categoria, descripcion, fecha, user_id):
         if conn: conn.close()
 
 def eliminar_movimiento(id_mov, user_id):
-    conn = None
+    "Elimina un registro de la tabla de transacciones por su ID y usuario."
     try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("DELETE FROM movimientos WHERE id = %s AND user_id = %s", (id_mov, user_id))
-        conn.commit()
-        cur.close()
-        st.cache_data.clear()
+        # Reemplaza 'transacciones' o 'movimientos' por el nombre exacto de tu tabla
+        query = "DELETE FROM transacciones WHERE id = %s AND user_id = %s"
+        execute_db(query, (id_mov, user_id))
         return True
     except Exception as e:
-        if conn: conn.rollback()
-        st.error(f"Error al eliminar: {e}")
+        st.error(f"Error al eliminar el registro: {e}")
         return False
-    finally:
-        if conn: conn.close()
 
 def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fecha, user_id):
     conn = None
@@ -669,17 +663,17 @@ with tab_flujo:
                                     st.success("✅ Registro actualizado.")
                                     st.rerun()
 
-                    with col_edit2:
+                        with col_edit2:
                         st.markdown("#### 🗑️ Eliminar")
+                        # Usamos user_id en minúsculas (o st.session_state.get('user_id'))
                         if st.button("❌ Borrar Registro", use_container_width=True):
-                            if eliminar_movimiento(id_seleccionado, USER_ID):
+                            if eliminar_movimiento(id_seleccionado, user_id):
                                 st.success("✅ Registro eliminado.")
                                 st.rerun()
         else:
             st.info("Aún no tienes movimientos registrados.")
     else:
         st.info("Aún no hay registros en la base de datos.")
-
 # =============================================================================
 # PESTAÑA 3: PORTAFOLIO DE INVERSIONES
 # =============================================================================
