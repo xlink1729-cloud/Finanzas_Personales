@@ -522,8 +522,8 @@ with tab_kpis:
                 st.warning("🟡 **Precaución:** Has superado el 70% de consumo de tu disponible total.")
             else:
                 st.error("🔴 **Freno de Mano:** Cerca o por encima del límite de tu presupuesto acumulado.")
-    else:
-        st.info("Aún no hay datos registrados.")
+        else:
+            st.info("Aún no hay datos registrados.")
 
         # =====================================================================
         # DESPLIEGUE EN INTERFAZ
@@ -591,8 +591,8 @@ with tab_kpis:
                 st.warning("🟡 **Precaución:** Has superado el 70% de consumo de tu nómina.")
             else:
                 st.error("🔴 **Freno de Mano:** Cerca o por encima del límite de tu depósito quincenal.")
-    else:
-        st.info("Aún no hay datos registrados.")
+        else:
+            st.info("Aún no hay datos registrados.")
 
 # =============================================================================
 # PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA
