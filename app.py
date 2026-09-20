@@ -477,11 +477,12 @@ with tab_kpis:
         st.markdown(f"#### 💳 Ciclo de Nómina Activo *(Desde {ini_q.strftime('%d/%m/%Y')})*")
         cg1, cg2, cg3, cg4 = st.columns(4)
         
-        cg1.metric(
-            "💰 Disponible Total Ciclo", 
-            fmt_monto(disponible_total_ciclo), 
-            delta=f"Nómina: {fmt_monto(monto_nom)} | Remanente: {fmt_monto(remanente_anterior)}"
-        )
+        with cg1:
+            st.metric(
+                "💰 Disponible Total Ciclo", 
+                fmt_monto(disponible_total_ciclo)
+            )
+            st.caption(f"🟢 **Nómina:** {fmt_monto(monto_nom)} | **Remanente:** {fmt_monto(remanente_anterior)}")
         
         cg2.metric(
             "💳 Gastado Débito (Ciclo)", 
