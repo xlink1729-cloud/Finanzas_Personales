@@ -357,7 +357,7 @@ tab_kpis, tab_flujo, tab_ahorros, tab_presupuesto, tab_efectivo = st.tabs([
 # =============================================================================
 with tab_kpis:
     st.markdown("### 🎯 Visión General de Salud Financiera")
-    st.caption("Resumen consolidado en tiempo real: patrimonio actual, flujo del ciclo activo e historial acumulado.")
+    st.caption("Resumen consolidado en tiempo real: patrimonio actual, disponible del ciclo e historial acumulado.")
 
     df_raw_kpi = obtener_movimientos(USER_ID)
 
@@ -426,7 +426,7 @@ with tab_kpis:
         liquidez_inmediata = saldo_debito + saldo_efectivo
         patrimonio_neto = liquidez_inmediata + total_inversiones
 
-        # --- 2. CÁLCULOS DEL CICLO DE NÓMINA ACTIVO ---
+        # --- 2. CÁLCULOS DEL CICLO DE NÓMINA CON REMANENTE ANTERIOR ---
         hoy = pd.Timestamp(obtener_fecha_local())
         df_nominas_kpi = df_flujo_kpi[mask_nomina_hist].sort_values('fecha_dt', ascending=False)
 
@@ -435,28 +435,95 @@ with tab_kpis:
             ini_q = pd.Timestamp(ult_nom['fecha_dt'])
             monto_nom = float(ult_nom['monto'])
 
-            # 1. Calcular el remanente (saldo en débito/efectivo justo antes de esta última nómina)
+            # Remanente acumulado antes del día del depósito de nómina
             df_previo = df_flujo_kpi[df_flujo_kpi['fecha_dt'] < ini_q.normalize()]
-            ingresos_prev = df_previo[df_previo['tipo'] == 'Ingreso']['monto'].sum()
-            egresos_prev = df_previo[df_previo['tipo'] == 'Egreso']['monto'].sum()
-            remanente_previo = max(0.0, ingresos_prev - egresos_prev)
+            ing_prev = df_previo[df_previo['tipo'] == 'Ingreso']['monto'].sum()
+            egr_prev = df_previo[df_previo['tipo'] == 'Egreso']['monto'].sum()
+            remanente_anterior = max(0.0, ing_prev - egr_prev)
         else:
             ini_q = hoy.replace(day=1)
             monto_nom = 0.0
-            remanente_previo = 0.0
+            remanente_anterior = 0.0
 
-        # Dinero total que tenías disponible para este ciclo
-        bolsa_total_disponible = remanente_previo + monto_nom
+        disponible_total_ciclo = monto_nom + remanente_anterior
 
-        # Movimientos del ciclo activo
+        # Movimientos dentro del ciclo actual
         df_ciclo_actual = df_flujo_kpi[df_flujo_kpi['fecha_dt'] >= ini_q.normalize()]
+        
         mask_debito_ciclo = df_ciclo_actual['descripcion'].str.contains("Débito", na=False) | (~df_ciclo_actual['descripcion'].str.contains("Efectivo", na=False))
         gastos_debito_ciclo = df_ciclo_actual[(df_ciclo_actual['tipo'] == 'Egreso') & mask_debito_ciclo]['monto'].sum()
         gastos_efectivo_ciclo = df_ciclo_actual[(df_ciclo_actual['tipo'] == 'Egreso') & df_ciclo_actual['descripcion'].str.contains("Efectivo", na=False)]['monto'].sum()
         total_gastado_ciclo = gastos_debito_ciclo + gastos_efectivo_ciclo
 
-        # Porcentaje consumido sobre la bolsa TOTAL disponible (Remanente + Nómina)
-        pct_real_gastado = (total_gastado_ciclo / bolsa_total_disponible * 100) if bolsa_total_disponible > 0 else 0.0
+        pct_real_gastado = (total_gastado_ciclo / disponible_total_ciclo * 100) if disponible_total_ciclo > 0 else 0.0
+
+        # =====================================================================
+        # DESPLIEGUE EN INTERFAZ
+        # =====================================================================
+
+        # BLOQUE A: PATRIMONIO Y LIQUIDEZ ACTUAL
+        st.markdown("#### 🏦 Balance Actual")
+        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+        kpi1.metric("🌐 Patrimonio Neto Total", fmt_monto(patrimonio_neto), help="Débito + Efectivo + Inversiones")
+        kpi2.metric("💧 Liquidez Inmediata", fmt_monto(liquidez_inmediata), help="Saldo disponible en Banco y Bolsillo")
+        kpi3.metric("📈 Capital Invertido", fmt_monto(total_inversiones), help="Suma de CETES, Nu, Fintual, etc.")
+        kpi4.metric("💰 Rendimiento Pasivo Est.", fmt_monto(rendimiento_mensual_est), delta=f"+${rendimiento_mensual_est*12:,.2f}/año", delta_color="normal")
+
+        st.markdown("---")
+
+        # BLOQUE B: MONITOREO DEL CICLO ACTIVO CON REMANENTE (15 al 29)
+        st.markdown(f"#### 💳 Ciclo de Nómina Activo *(Desde {ini_q.strftime('%d/%m/%Y')})*")
+        cg1, cg2, cg3, cg4 = st.columns(4)
+        cg1.metric("💰 Disponible Total Ciclo", fmt_monto(disponible_total_ciclo), delta=f"Nómina: {fmt_monto(monto_nom)} | Remanente: {fmt_monto(remanente_anterior)}")
+        cg2.metric("💳 Gastado Débito (Ciclo)", fmt_monto(gastos_debito_ciclo), delta_color="inverse")
+        cg3.metric("👛 Gastado Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
+        cg4.metric("📊 Consumo del Disponible", fmt_monto(total_gastado_ciclo), delta=f"↑ {pct_real_gastado:.1f}% del disponible total", delta_color="inverse")
+
+        st.markdown("---")
+
+        # BLOQUE C: HISTÓRICO ACUMULADO (DESDE EL INICIO)
+        st.markdown("#### 📜 Acumulado Histórico *(Desde el inicio de registros)*")
+        ch1, ch2, ch3, ch4 = st.columns(4)
+        ch1.metric("💼 Total Nómina Ingresada", fmt_monto(total_nomina_historica), help="Suma total de todas tus nóminas registradas")
+        ch2.metric("💳 Total Gastado en Débito", fmt_monto(gastos_debito_historicos), help="Suma de todos los egresos con tarjeta de débito", delta_color="inverse")
+        ch3.metric("👛 Total Gastado en Efectivo", fmt_monto(gastos_efectivo_historicos), help="Suma de todos los egresos en efectivo", delta_color="inverse")
+        ch4.metric("💸 Total Gastos Históricos", fmt_monto(total_gastos_historicos), help="Débito + Efectivo combinados", delta_color="inverse")
+
+        st.markdown("---")
+
+        # BLOQUE D: GRÁFICOS Y SEMÁFORO
+        col_graf_kpi1, col_graf_kpi2 = st.columns([1, 1])
+
+        with col_graf_kpi1:
+            st.markdown("#### 📊 Distribución Global de Activos")
+            data_distribucion = pd.DataFrame({
+                'Activo': ['💳 Tarjeta Débito', '💵 Billetera / Efectivo', '📈 Portafolio Inversión'],
+                'Monto': [max(0, saldo_debito), max(0, saldo_efectivo), max(0, total_inversiones)]
+            })
+
+            fig_dist = px.pie(
+                data_distribucion, values='Monto', names='Activo', hole=0.45,
+                color_discrete_sequence=['#496a81', '#669bbc', '#2E7D32']
+            )
+            fig_dist.update_traces(textinfo='percent+label')
+            fig_dist.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_dist, use_container_width=True)
+
+        with col_graf_kpi2:
+            st.markdown("#### 🚨 Semáforo de Ritmo Quincenal")
+
+            st.write(f"**Disponible del ciclo (Nómina + Remanente):** {fmt_monto(disponible_total_ciclo)}")
+            st.write(f"**Gastado en el ciclo:** {fmt_monto(total_gastado_ciclo)} ({pct_real_gastado:.1f}%)")
+            st.progress(min(1.0, pct_real_gastado / 100))
+
+            if pct_real_gastado < 70:
+                st.success("🟢 **Saludable:** Mantienes un ritmo de gasto controlado para este ciclo.")
+            elif pct_real_gastado <= 90:
+                st.warning("🟡 **Precaución:** Has superado el 70% de consumo de tu disponible total.")
+            else:
+                st.error("🔴 **Freno de Mano:** Cerca o por encima del límite de tu presupuesto acumulado.")
+    else:
+        st.info("Aún no hay datos registrados.")
 
         # =====================================================================
         # DESPLIEGUE EN INTERFAZ
