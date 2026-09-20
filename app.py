@@ -473,13 +473,33 @@ with tab_kpis:
 
         st.markdown("---")
 
-        # BLOQUE B: MONITOREO DEL CICLO ACTIVO CON REMANENTE (15 al 29)
+        # BLOQUE B: MONITOREO DEL CICLO DE NÓMINA ACTIVO
         st.markdown(f"#### 💳 Ciclo de Nómina Activo *(Desde {ini_q.strftime('%d/%m/%Y')})*")
         cg1, cg2, cg3, cg4 = st.columns(4)
-        cg1.metric("💰 Disponible Total Ciclo", fmt_monto(disponible_total_ciclo), delta=f"Nómina: {fmt_monto(monto_nom)} | Remanente: {fmt_monto(remanente_anterior)}")
-        cg2.metric("💳 Gastado Débito (Ciclo)", fmt_monto(gastos_debito_ciclo), delta_color="inverse")
-        cg3.metric("👛 Gastado Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
-        cg4.metric("📊 Consumo del Disponible", fmt_monto(total_gastado_ciclo), delta=f"↑ {pct_real_gastado:.1f}% del disponible total", delta_color="inverse")
+        
+        cg1.metric(
+            "💵 Saldo Real en Débito (Acumulado)", 
+            fmt_monto(saldo_debito), 
+            delta=f"Remanente previo: {fmt_monto(remanente_anterior)}"
+        )
+        
+        cg2.metric(
+            "💳 Gastos con Débito (Ciclo)", 
+            fmt_monto(gastos_debito_ciclo), 
+            delta_color="inverse"
+        )
+        
+        cg3.metric(
+            "👛 Gastos en Efectivo (Ciclo)", 
+            fmt_monto(gastos_efectivo_ciclo), 
+            delta_color="inverse"
+        )
+        
+        cg4.metric(
+            "🏦 Nómina Recibida", 
+            fmt_monto(monto_nom), 
+            delta=f"Base total ciclo: {fmt_monto(disponible_total_ciclo)}"
+        )
 
         st.markdown("---")
 
