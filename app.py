@@ -384,8 +384,10 @@ with tab_kpis:
                 tasa = 0.0
                 m = re.search(r"Tasa:\s*([\d\.]+)%", desc)
                 if m:
-                    try: tasa = float(m.group(1))
-                    except: pass
+                    try: 
+                        tasa = float(m.group(1))
+                    except: 
+                        pass
                 return pd.Series([plat, tasa], index=['Plataforma', 'Tasa (%)'])
 
             df_inv[['Plataforma', 'Tasa (%)']] = df_inv.apply(extraer_plat_tasa, axis=1)
@@ -522,78 +524,9 @@ with tab_kpis:
                 st.warning("🟡 **Precaución:** Has superado el 70% de consumo de tu disponible total.")
             else:
                 st.error("🔴 **Freno de Mano:** Cerca o por encima del límite de tu presupuesto acumulado.")
-        else:
-            st.info("Aún no hay datos registrados.")
-
-        # =====================================================================
-        # DESPLIEGUE EN INTERFAZ
-        # =====================================================================
-
-        # BLOQUE A: PATRIMONIO Y LIQUIDEZ ACTUAL
-        st.markdown("#### 🏦 Balance Actual")
-        kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.metric("🌐 Patrimonio Neto Total", fmt_monto(patrimonio_neto), help="Débito + Efectivo + Inversiones")
-        kpi2.metric("💧 Liquidez Inmediata", fmt_monto(liquidez_inmediata), help="Saldo disponible en Banco y Bolsillo")
-        kpi3.metric("📈 Capital Invertido", fmt_monto(total_inversiones), help="Suma de CETES, Nu, Fintual, etc.")
-        kpi4.metric("💰 Rendimiento Pasivo Est.", fmt_monto(rendimiento_mensual_est), delta=f"+${rendimiento_mensual_est*12:,.2f}/año", delta_color="normal")
-
-        st.markdown("---")
-
-        # BLOQUE B: MONITOREO DEL CICLO ACTIVO (15 al 29)
-        st.markdown(f"#### 💳 Ciclo de Nómina Activo *(Desde {ini_q.strftime('%d/%m/%Y')})*")
-        cg1, cg2, cg3, cg4 = st.columns(4)
-        cg1.metric("💵 Última Nómina Recibida", fmt_monto(monto_nom))
-        cg2.metric("💳 Gastado Débito (Ciclo)", fmt_monto(gastos_debito_ciclo), delta_color="inverse")
-        cg3.metric("👛 Gastado Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
-        cg4.metric("📊 Gasto Total del Ciclo", fmt_monto(total_gastado_ciclo), delta=f"{(total_gastado_ciclo/monto_nom*100):.1f}% de nómina" if monto_nom > 0 else None, delta_color="inverse")
-
-        st.markdown("---")
-
-        # BLOQUE C: HISTÓRICO ACUMULADO (DESDE EL INICIO)
-        st.markdown("#### 📜 Acumulado Histórico *(Desde el inicio de registros)*")
-        ch1, ch2, ch3, ch4 = st.columns(4)
-        ch1.metric("💼 Total Nómina Ingresada", fmt_monto(total_nomina_historica), help="Suma total de todas tus nóminas registradas")
-        ch2.metric("💳 Total Gastado en Débito", fmt_monto(gastos_debito_historicos), help="Suma de todos los egresos con tarjeta de débito", delta_color="inverse")
-        ch3.metric("👛 Total Gastado en Efectivo", fmt_monto(gastos_efectivo_historicos), help="Suma de todos los egresos en efectivo", delta_color="inverse")
-        ch4.metric("💸 Total Gastos Históricos", fmt_monto(total_gastos_historicos), help="Débito + Efectivo combinados", delta_color="inverse")
-
-        st.markdown("---")
-
-        # BLOQUE D: GRÁFICOS Y SEMÁFORO
-        col_graf_kpi1, col_graf_kpi2 = st.columns([1, 1])
-
-        with col_graf_kpi1:
-            st.markdown("#### 📊 Distribución Global de Activos")
-            data_distribucion = pd.DataFrame({
-                'Activo': ['💳 Tarjeta Débito', '💵 Billetera / Efectivo', '📈 Portafolio Inversión'],
-                'Monto': [max(0, saldo_debito), max(0, saldo_efectivo), max(0, total_inversiones)]
-            })
-
-            fig_dist = px.pie(
-                data_distribucion, values='Monto', names='Activo', hole=0.45,
-                color_discrete_sequence=['#496a81', '#669bbc', '#2E7D32']
-            )
-            fig_dist.update_traces(textinfo='percent+label')
-            fig_dist.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
-            st.plotly_chart(fig_dist, use_container_width=True)
-
-        with col_graf_kpi2:
-            st.markdown("#### 🚨 Semáforo de Ritmo Quincenal")
-            pct_gastado = (total_gastado_ciclo / monto_nom * 100) if monto_nom > 0 else 0.0
-
-            st.write(f"**Nómina registrada del ciclo:** {fmt_monto(monto_nom)}")
-            st.write(f"**Gastado en el ciclo:** {fmt_monto(total_gastado_ciclo)} ({pct_gastado:.1f}%)")
-            st.progress(min(1.0, pct_gastado / 100))
-
-            if pct_gastado < 70:
-                st.success("🟢 **Saludable:** Mantienes un ritmo de gasto controlado para esta quincena.")
-            elif pct_gastado <= 90:
-                st.warning("🟡 **Precaución:** Has superado el 70% de consumo de tu nómina.")
-            else:
-                st.error("🔴 **Freno de Mano:** Cerca o por encima del límite de tu depósito quincenal.")
-        else:
-            st.info("Aún no hay datos registrados.")
-
+    else:
+        st.info("Aún no hay datos registrados.")
+        
 # =============================================================================
 # PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA
 # =============================================================================
