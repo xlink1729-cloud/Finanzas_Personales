@@ -434,16 +434,29 @@ with tab_kpis:
             ult_nom = df_nominas_kpi.iloc[0]
             ini_q = pd.Timestamp(ult_nom['fecha_dt'])
             monto_nom = float(ult_nom['monto'])
+
+            # 1. Calcular el remanente (saldo en débito/efectivo justo antes de esta última nómina)
+            df_previo = df_flujo_kpi[df_flujo_kpi['fecha_dt'] < ini_q.normalize()]
+            ingresos_prev = df_previo[df_previo['tipo'] == 'Ingreso']['monto'].sum()
+            egresos_prev = df_previo[df_previo['tipo'] == 'Egreso']['monto'].sum()
+            remanente_previo = max(0.0, ingresos_prev - egresos_prev)
         else:
             ini_q = hoy.replace(day=1)
             monto_nom = 0.0
+            remanente_previo = 0.0
 
+        # Dinero total que tenías disponible para este ciclo
+        bolsa_total_disponible = remanente_previo + monto_nom
+
+        # Movimientos del ciclo activo
         df_ciclo_actual = df_flujo_kpi[df_flujo_kpi['fecha_dt'] >= ini_q.normalize()]
-        
         mask_debito_ciclo = df_ciclo_actual['descripcion'].str.contains("Débito", na=False) | (~df_ciclo_actual['descripcion'].str.contains("Efectivo", na=False))
         gastos_debito_ciclo = df_ciclo_actual[(df_ciclo_actual['tipo'] == 'Egreso') & mask_debito_ciclo]['monto'].sum()
         gastos_efectivo_ciclo = df_ciclo_actual[(df_ciclo_actual['tipo'] == 'Egreso') & df_ciclo_actual['descripcion'].str.contains("Efectivo", na=False)]['monto'].sum()
         total_gastado_ciclo = gastos_debito_ciclo + gastos_efectivo_ciclo
+
+        # Porcentaje consumido sobre la bolsa TOTAL disponible (Remanente + Nómina)
+        pct_real_gastado = (total_gastado_ciclo / bolsa_total_disponible * 100) if bolsa_total_disponible > 0 else 0.0
 
         # =====================================================================
         # DESPLIEGUE EN INTERFAZ
