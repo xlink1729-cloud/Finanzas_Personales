@@ -626,12 +626,12 @@ with tab_kpis:
         df_destino_nomina = df_destino_nomina[df_destino_nomina["Monto"] > 0]
 
         if not df_destino_nomina.empty:
+            # 1. GRÁFICA DE ROSQUILLA CON TEXTO CENTRAL
             fig_destino = px.pie(
                 df_destino_nomina, 
                 values="Monto", 
                 names="Destino", 
-                hole=0.45,
-                # Paleta sobria estilizada en tonos azul, pizarra y verde mate
+                hole=0.50,
                 color_discrete_map={
                     "💳 Pagos a TDC": "#85a2b6",
                     "🔵 Gastos en Débito": "#496a81",
@@ -647,12 +647,37 @@ with tab_kpis:
             )
             
             fig_destino.update_layout(
+                annotations=[dict(
+                    text=f"<b>Base Periodo</b><br>{fmt_monto(base_disponible_periodo)}", 
+                    x=0.5, y=0.5, 
+                    font_size=15, 
+                    showarrow=False
+                )],
                 height=550, 
                 showlegend=False,
                 margin=dict(t=20, b=20, l=10, r=10)
             )
             
             st.plotly_chart(fig_destino, use_container_width=True)
+
+            # 2. MUESTRA NUMÉRICA EN TARJETAS DE MÉTRICAS
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            col_m1.metric("💳 Pagos a TDC", fmt_monto(pagos_tdc_filtrado))
+            col_m2.metric("🔵 Gastos en Débito", fmt_monto(gastos_debito_puros))
+            col_m3.metric("👛 Gastos en Efectivo", fmt_monto(gastos_efectivo_filtrado))
+            col_m4.metric("🟢 Saldo Libre", fmt_monto(saldo_libre_filtrado))
+
+            # 3. DIAGNÓSTICO FINANCIERO DINÁMICO
+            pct_tdc = (pagos_tdc_filtrado / base_disponible_periodo * 100) if base_disponible_periodo > 0 else 0
+            pct_libre = (saldo_libre_filtrado / base_disponible_periodo * 100) if base_disponible_periodo > 0 else 0
+
+            if pct_tdc > 35:
+                st.warning(f"⚠️ **Atención en Deuda:** El **{pct_tdc:.1f}%** de tu disponible se destinó a pagar TDC en este periodo. Se recomienda mantener este rubro por debajo del 30%.")
+            elif pct_libre < 10:
+                st.info(f"💡 **Margen Ajustado:** Te queda un **{pct_libre:.1f}%** de saldo libre. Intenta reducir egresos en efectivo/débito para ampliar tu margen de ahorro al 15%.")
+            else:
+                st.success(f"🟢 **Distribución Saludable:** Conservas un **{pct_libre:.1f}%** de saldo libre y mantienes el pago de deuda controlado.")
+
         else:
             st.info("💡 No hay movimientos registrados en el rango de fechas seleccionado.")
         
