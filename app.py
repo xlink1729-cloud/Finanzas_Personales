@@ -553,27 +553,68 @@ with tab_kpis:
         st.markdown("---")
 
         # =========================================================
-        # NUEVA GRÁFICA: DISTRIBUCIÓN Y DESTINO DE LA NÓMINA EN EL CICLO
+        # GRÁFICA CON FILTRO POR FECHAS: DESTINO Y COMPOSICIÓN DE LA NÓMINA
         # =========================================================
         st.markdown("#### 🍩 Destino y Composición de la Nómina del Ciclo")
-        st.caption("Proporción de tu disponible del ciclo distribuido entre pagos a TDC, gastos en débito, gastos en efectivo y saldo libre.")
+        st.caption("Filtra por periodo para analizar cómo se distribuyó el disponible entre TDC, débito, efectivo y saldo libre.")
 
-        # Obtener pagos a Tarjeta de Crédito (TDC) en el ciclo actual si existen
-        mask_tdc_ciclo = (
-            (df_ciclo_actual['tipo'] == 'Egreso') & 
+        # --- CONTROLES DE FILTRO POR FECHA ---
+        col_f1, col_f2 = st.columns([1, 2])
+        with col_f1:
+            fecha_inicio_default = ini_q.date()
+            fecha_fin_default = hoy.date()
+            
+            rango_fechas = st.date_input(
+                "📅 Selecciona el rango de fechas:",
+                value=(fecha_inicio_default, fecha_fin_default),
+                key="filtro_fechas_grafica_destino"
+            )
+
+        # Validación y extracción del rango seleccionado
+        if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
+            f_inicio, f_fin = rango_fechas
+        else:
+            f_inicio, f_fin = fecha_inicio_default, fecha_fin_default
+
+        # Filtrar el DataFrame según el rango de fechas seleccionado
+        mask_fechas = (
+            (df_flujo_kpi['fecha_dt'].dt.date >= f_inicio) & 
+            (df_flujo_kpi['fecha_dt'].dt.date <= f_fin)
+        )
+        df_filtrado_grafica = df_flujo_kpi[mask_fechas].copy()
+
+        # --- CÁLCULOS SOBRE EL PERIODO FILTRADO ---
+        # 1. Ingresos/Nómina en el periodo seleccionado
+        mask_nom_filtro = (df_filtrado_grafica['tipo'] == 'Ingreso') & (df_filtrado_grafica['categoria'].str.contains("Nómina", case=False, na=False))
+        monto_nomina_filtrado = df_filtrado_grafica[mask_nom_filtro]['monto'].sum()
+        
+        # Base de disponible (si coincide con el ciclo activo usa disponible_total_ciclo, si no, usa los ingresos del periodo)
+        base_disponible_periodo = disponible_total_ciclo if (f_inicio == fecha_inicio_default and f_fin == fecha_fin_default) else monto_nomina_filtrado
+
+        # 2. Pagos a TDC en el periodo
+        mask_tdc_filtrado = (
+            (df_filtrado_grafica['tipo'] == 'Egreso') & 
             (
-                df_ciclo_actual['categoria'].str.contains("TDC|Tarjeta de Crédito|Credito", case=False, na=False) |
-                df_ciclo_actual['descripcion'].str.contains("TDC|Tarjeta de Crédito|Credito", case=False, na=False)
+                df_filtrado_grafica['categoria'].str.contains("TDC|Tarjeta de Crédito|Credito", case=False, na=False) |
+                df_filtrado_grafica['descripcion'].str.contains("TDC|Tarjeta de Crédito|Credito", case=False, na=False)
             )
         )
-        pagos_tdc_ciclo = df_ciclo_actual[mask_tdc_ciclo]['monto'].sum()
+        pagos_tdc_filtrado = df_filtrado_grafica[mask_tdc_filtrado]['monto'].sum()
 
-        # Ajustar gastos de débito puros (excluyendo TDC si estaban contemplados)
-        gastos_debito_puros = max(0.0, gastos_debito_ciclo - pagos_tdc_ciclo)
+        # 3. Gastos en Débito en el periodo (excluyendo TDC si aplican)
+        mask_debito_filtrado = (df_filtrado_grafica['tipo'] == 'Egreso') & (~df_filtrado_grafica['descripcion'].str.contains("Efectivo", case=False, na=False))
+        gastos_debito_totales = df_filtrado_grafica[mask_debito_filtrado]['monto'].sum()
+        gastos_debito_puros = max(0.0, gastos_debito_totales - pagos_tdc_filtrado)
 
-        # Saldo que permanece libre en la nómina/ciclo
-        saldo_libre_ciclo = max(0.0, disponible_total_ciclo - (pagos_tdc_ciclo + gastos_debito_puros + gastos_efectivo_ciclo))
+        # 4. Gastos en Efectivo en el periodo
+        mask_efectivo_filtrado = (df_filtrado_grafica['tipo'] == 'Egreso') & (df_filtrado_grafica['descripcion'].str.contains("Efectivo", case=False, na=False))
+        gastos_efectivo_filtrado = df_filtrado_grafica[mask_efectivo_filtrado]['monto'].sum()
 
+        # 5. Saldo Libre / Restante del periodo
+        total_gastos_periodo = pagos_tdc_filtrado + gastos_debito_puros + gastos_efectivo_filtrado
+        saldo_libre_filtrado = max(0.0, base_disponible_periodo - total_gastos_periodo)
+
+        # Armado del DataFrame para el gráfico
         df_destino_nomina = pd.DataFrame({
             "Destino": [
                 "💳 Pagos a TDC", 
@@ -582,14 +623,14 @@ with tab_kpis:
                 "🟢 Saldo Libre / Disponible"
             ],
             "Monto": [
-                pagos_tdc_ciclo, 
+                pagos_tdc_filtrado, 
                 gastos_debito_puros, 
-                gastos_efectivo_ciclo, 
-                saldo_libre_ciclo
+                gastos_efectivo_filtrado, 
+                saldo_libre_filtrado
             ]
         })
 
-        # Filtrar solo rubros con movimientos para evitar encimados
+        # Filtrar rubros en cero para evitar encimados en la gráfica
         df_destino_nomina = df_destino_nomina[df_destino_nomina["Monto"] > 0]
 
         if not df_destino_nomina.empty:
@@ -621,7 +662,7 @@ with tab_kpis:
             
             st.plotly_chart(fig_destino, use_container_width=True)
         else:
-            st.info("💡 Aún no hay datos suficientes para estructurar el destino de la nómina del ciclo.")
+            st.info("💡 No hay movimientos registrados en el rango de fechas seleccionado.")
         
 # =============================================================================
 # PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA
