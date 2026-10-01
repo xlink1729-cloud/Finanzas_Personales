@@ -549,8 +549,79 @@ with tab_kpis:
                 st.warning("🟡 **Precaución:** Has superado el 70% de consumo de tu disponible total.")
             else:
                 st.error("🔴 **Freno de Mano:** Cerca o por encima del límite de tu presupuesto acumulado.")
-    else:
-        st.info("Aún no hay datos registrados.")
+
+        st.markdown("---")
+
+        # =========================================================
+        # NUEVA GRÁFICA: DISTRIBUCIÓN Y DESTINO DE LA NÓMINA EN EL CICLO
+        # =========================================================
+        st.markdown("#### 🍩 Destino y Composición de la Nómina del Ciclo")
+        st.caption("Proporción de tu disponible del ciclo distribuido entre pagos a TDC, gastos en débito, gastos en efectivo y saldo libre.")
+
+        # Obtener pagos a Tarjeta de Crédito (TDC) en el ciclo actual si existen
+        mask_tdc_ciclo = (
+            (df_ciclo_actual['tipo'] == 'Egreso') & 
+            (
+                df_ciclo_actual['categoria'].str.contains("TDC|Tarjeta de Crédito|Credito", case=False, na=False) |
+                df_ciclo_actual['descripcion'].str.contains("TDC|Tarjeta de Crédito|Credito", case=False, na=False)
+            )
+        )
+        pagos_tdc_ciclo = df_ciclo_actual[mask_tdc_ciclo]['monto'].sum()
+
+        # Ajustar gastos de débito puros (excluyendo TDC si estaban contemplados)
+        gastos_debito_puros = max(0.0, gastos_debito_ciclo - pagos_tdc_ciclo)
+
+        # Saldo que permanece libre en la nómina/ciclo
+        saldo_libre_ciclo = max(0.0, disponible_total_ciclo - (pagos_tdc_ciclo + gastos_debito_puros + gastos_efectivo_ciclo))
+
+        df_destino_nomina = pd.DataFrame({
+            "Destino": [
+                "💳 Pagos a TDC", 
+                "🔵 Gastos en Débito", 
+                "👛 Gastos en Efectivo", 
+                "🟢 Saldo Libre / Disponible"
+            ],
+            "Monto": [
+                pagos_tdc_ciclo, 
+                gastos_debito_puros, 
+                gastos_efectivo_ciclo, 
+                saldo_libre_ciclo
+            ]
+        })
+
+        # Filtrar solo rubros con movimientos para evitar encimados
+        df_destino_nomina = df_destino_nomina[df_destino_nomina["Monto"] > 0]
+
+        if not df_destino_nomina.empty:
+            fig_destino = px.pie(
+                df_destino_nomina, 
+                values="Monto", 
+                names="Destino", 
+                hole=0.45,
+                color_discrete_map={
+                    "💳 Pagos a TDC": "#e74c3c",
+                    "🔵 Gastos en Débito": "#3498db",
+                    "👛 Gastos en Efectivo": "#f39c12",
+                    "🟢 Saldo Libre / Disponible": "#2ecc71"
+                }
+            )
+            
+            fig_destino.update_traces(
+                textposition='inside', 
+                textinfo='percent+label',
+                hovertemplate='<b>%{label}</b><br>Monto: $%{value:,.2f}<br>Porcentaje: %{percent}'
+            )
+            
+            fig_destino.update_layout(
+                height=400, 
+                showlegend=True, 
+                legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
+                margin=dict(t=20, b=40, l=10, r=10)
+            )
+            
+            st.plotly_chart(fig_destino, use_container_width=True)
+        else:
+            st.info("💡 Aún no hay datos suficientes para estructurar el destino de la nómina del ciclo.")
         
 # =============================================================================
 # PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA
