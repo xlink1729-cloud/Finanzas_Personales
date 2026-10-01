@@ -555,7 +555,6 @@ with tab_kpis:
         # =========================================================
         # GRÁFICA CON FILTRO POR FECHAS: DESTINO Y COMPOSICIÓN DE LA NÓMINA
         # =========================================================
-        st.markdown("---")
         st.markdown("#### 🍩 Destino y Composición de la Nómina del Ciclo")
         st.caption("Filtra por periodo para analizar cómo se distribuyó el disponible entre TDC, débito, efectivo y saldo libre.")
 
