@@ -555,6 +555,7 @@ with tab_kpis:
         # =========================================================
         # GRÁFICA CON FILTRO POR FECHAS: DESTINO Y COMPOSICIÓN DE LA NÓMINA
         # =========================================================
+        st.markdown("---")
         st.markdown("#### 🍩 Destino y Composición de la Nómina del Ciclo")
         st.caption("Filtra por periodo para analizar cómo se distribuyó el disponible entre TDC, débito, efectivo y saldo libre.")
 
@@ -584,14 +585,11 @@ with tab_kpis:
         df_filtrado_grafica = df_flujo_kpi[mask_fechas].copy()
 
         # --- CÁLCULOS SOBRE EL PERIODO FILTRADO ---
-        # 1. Ingresos/Nómina en el periodo seleccionado
         mask_nom_filtro = (df_filtrado_grafica['tipo'] == 'Ingreso') & (df_filtrado_grafica['categoria'].str.contains("Nómina", case=False, na=False))
         monto_nomina_filtrado = df_filtrado_grafica[mask_nom_filtro]['monto'].sum()
         
-        # Base de disponible (si coincide con el ciclo activo usa disponible_total_ciclo, si no, usa los ingresos del periodo)
         base_disponible_periodo = disponible_total_ciclo if (f_inicio == fecha_inicio_default and f_fin == fecha_fin_default) else monto_nomina_filtrado
 
-        # 2. Pagos a TDC en el periodo
         mask_tdc_filtrado = (
             (df_filtrado_grafica['tipo'] == 'Egreso') & 
             (
@@ -601,20 +599,16 @@ with tab_kpis:
         )
         pagos_tdc_filtrado = df_filtrado_grafica[mask_tdc_filtrado]['monto'].sum()
 
-        # 3. Gastos en Débito en el periodo (excluyendo TDC si aplican)
         mask_debito_filtrado = (df_filtrado_grafica['tipo'] == 'Egreso') & (~df_filtrado_grafica['descripcion'].str.contains("Efectivo", case=False, na=False))
         gastos_debito_totales = df_filtrado_grafica[mask_debito_filtrado]['monto'].sum()
         gastos_debito_puros = max(0.0, gastos_debito_totales - pagos_tdc_filtrado)
 
-        # 4. Gastos en Efectivo en el periodo
         mask_efectivo_filtrado = (df_filtrado_grafica['tipo'] == 'Egreso') & (df_filtrado_grafica['descripcion'].str.contains("Efectivo", case=False, na=False))
         gastos_efectivo_filtrado = df_filtrado_grafica[mask_efectivo_filtrado]['monto'].sum()
 
-        # 5. Saldo Libre / Restante del periodo
         total_gastos_periodo = pagos_tdc_filtrado + gastos_debito_puros + gastos_efectivo_filtrado
         saldo_libre_filtrado = max(0.0, base_disponible_periodo - total_gastos_periodo)
 
-        # Armado del DataFrame para el gráfico
         df_destino_nomina = pd.DataFrame({
             "Destino": [
                 "💳 Pagos a TDC", 
@@ -630,7 +624,6 @@ with tab_kpis:
             ]
         })
 
-        # Filtrar rubros en cero para evitar encimados en la gráfica
         df_destino_nomina = df_destino_nomina[df_destino_nomina["Monto"] > 0]
 
         if not df_destino_nomina.empty:
@@ -639,11 +632,12 @@ with tab_kpis:
                 values="Monto", 
                 names="Destino", 
                 hole=0.45,
+                # Paleta sobria estilizada en tonos azul, pizarra y verde mate
                 color_discrete_map={
-                    "💳 Pagos a TDC": "#e74c3c",
-                    "🔵 Gastos en Débito": "#3498db",
-                    "👛 Gastos en Efectivo": "#f39c12",
-                    "🟢 Saldo Libre / Disponible": "#2ecc71"
+                    "💳 Pagos a TDC": "#85a2b6",
+                    "🔵 Gastos en Débito": "#496a81",
+                    "👛 Gastos en Efectivo": "#2b3a4a",
+                    "🟢 Saldo Libre / Disponible": "#2E7D32"
                 }
             )
             
@@ -654,10 +648,9 @@ with tab_kpis:
             )
             
             fig_destino.update_layout(
-                height=400, 
-                showlegend=True, 
-                legend=dict(orientation="h", yanchor="bottom", y=-0.15, xanchor="center", x=0.5),
-                margin=dict(t=20, b=40, l=10, r=10)
+                height=550, 
+                showlegend=False,
+                margin=dict(t=20, b=20, l=10, r=10)
             )
             
             st.plotly_chart(fig_destino, use_container_width=True)
