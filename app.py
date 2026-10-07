@@ -1161,18 +1161,17 @@ with tab_efectivo:
     st.header("👛 Control de Billetera y Efectivo")
     st.caption("Administra los billetes que retiras del cajero o ajusta tu saldo físico sin alterar tu saldo bancario.")
 
-    col_ef1, col_ef2 = st.columns(2)
-
     # -------------------------------------------------------------------------
-    # 1. REGISTRO DE ENTRADA DE EFECTIVO / AJUSTE DE SALDO
+    # 1. DESPLEGABLE: ENTRADA DE EFECTIVO / AJUSTE DE SALDO
     # -------------------------------------------------------------------------
-    with col_ef1:
+    with st.expander("📥 + Registrar Entrada de Efectivo / Ajuste de Saldo", expanded=False):
         st.subheader("1. 📥 Entrada de Efectivo / Ajuste")
         
         tipo_entrada = st.radio(
             "Origen del Dinero", 
             ["🏦 Retiro de Cajero (Descuenta de Débito)", "💵 Ajuste / Dinero Extra (NO afecta Débito)"],
-            help="Usa 'Ajuste' si tenías efectivo guardado previamente o no quieres que reste a tu nómina."
+            help="Usa 'Ajuste' si tenías efectivo guardado previamente o no quieres que reste a tu nómina.",
+            key="radio_tipo_entrada_efectivo"
         )
 
         with st.form("form_retiro_efectivo", clear_on_submit=True):
@@ -1197,9 +1196,9 @@ with tab_efectivo:
                 st.rerun()
 
     # -------------------------------------------------------------------------
-    # 2. REGISTRO DE SALIDA Y GASTOS EN EFECTIVO
+    # 2. DESPLEGABLE: REGISTRO DE SALIDA Y GASTOS EN EFECTIVO
     # -------------------------------------------------------------------------
-    with col_ef2:
+    with st.expander("🛒 - Registrar Gasto Realizado en Efectivo", expanded=False):
         st.subheader("2. 💸 Registrar Gasto Realizado en Efectivo")
         st.info("Esto descuenta directamente del efectivo de tu bolsillo y asigna la categoría de gasto.")
         
