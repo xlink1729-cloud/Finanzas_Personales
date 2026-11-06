@@ -1,3 +1,32 @@
+"""
+===============================================================================
+SISTEMA DE GESTIÓN DE FINANZAS PERSONALES Y CONTROL QUINCENAL (FINSMART)
+===============================================================================
+Descripción:
+    Aplicación web desarrollada en Streamlit para el control financiero 
+    personalizado de flujos quincenales, portafolio de inversiones, presupuesto 
+    basado en la regla 50/30/20 y administración de efectivo/billetera.
+
+Arquitectura y Tecnologías:
+    - Frontend / UI: Streamlit (con diseño responsivo en pestañas y gráficos interactivos Plotly).
+    - Base de Datos: PostgreSQL hospedada en Neon (conexión mediante `psycopg2`).
+    - Seguridad: Autenticación de usuarios con cifrado de contraseñas mediante `bcrypt` y `hashlib`.
+    - Gestión de Fechas: Zona horaria explícita configurada para México (`America/Mexico_City`).
+
+Estructura del Script:
+    1. Configuración inicial y de zona horaria.
+    2. Módulo de control de acceso y seguridad (Login / Registro).
+    3. Barra lateral (Sidebar), privacidad y funciones de formato.
+    4. Capa de abstracción de base de datos (CRUD de movimientos).
+    5. Pestañas de la aplicación:
+        - Tab 1: Resumen Ejecutivo (KPIs y distribución global).
+        - Tab 2: Flujo Quincenal y Nómina (Registro, filtros por tipo y método de pago, edición).
+        - Tab 3: Portafolio de Inversiones (CETES, Nu, Fintual, etc.).
+        - Tab 4: Presupuesto Mensual (Regla 50/30/20).
+        - Tab 5: Billetera y Efectivo (Control de bolsillo, retiros y gastos físicos).
+===============================================================================
+"""
+
 import streamlit as st
 import pandas as pd
 import psycopg2
@@ -30,14 +59,16 @@ st.set_page_config(
 # 2. CONTROL DE ACCESO, AUTENTICACIÓN Y SEGURIDAD MULTIUSUARIO (BCRYPT)
 # =============================================================================
 def get_connection():
-    """Establece conexión activa a la base de datos PostgreSQL/Neon."""
+    """Establece y retorna una conexión activa a la base de datos PostgreSQL/Neon."""
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 def generar_hash_password(password: str) -> str:
+    """Genera un hash seguro utilizando bcrypt."""
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def verificar_password(password: str, hashed_password: str) -> bool:
+    """Valida la contraseña ingresada contra el hash almacenado (soporta bcrypt y legacy SHA-256)."""
     if not hashed_password:
         return False
         
@@ -56,6 +87,7 @@ def verificar_password(password: str, hashed_password: str) -> bool:
     return password == hashed_password
 
 def validar_usuario_db(username, password):
+    """Consulta las credenciales del usuario en la base de datos."""
     conn = None
     try:
         conn = get_connection()
@@ -76,6 +108,7 @@ def validar_usuario_db(username, password):
         if conn: conn.close()
             
 def registrar_usuario_db(username, password, nombre):
+    """Registra un nuevo usuario en el sistema con contraseña hasheada."""
     conn = None
     try:
         conn = get_connection()
@@ -100,6 +133,7 @@ def registrar_usuario_db(username, password, nombre):
         if conn: conn.close()
             
 def mostrar_login():
+    """Renderiza la interfaz gráfica de inicio de sesión y registro de cuentas."""
     st.markdown("""
         <style>
         .stApp {
@@ -250,14 +284,16 @@ if st.sidebar.button("Cerrar Sesión"):
     st.rerun()
 
 def fmt_monto(valor):
+    """Formatea valores monetarios aplicando el modo privacidad si está activo."""
     if ocultar_saldos:
         return "$ ••••••"
     return f"${valor:,.2f}"
 
 # =============================================================================
-# 4. CAPA DE BASE DE DATOS
+# 4. CAPA DE BASE DE DATOS (CRUD MOVIMIENTOS)
 # =============================================================================
 def obtener_movimientos(user_id):
+    """Consulta todos los movimientos financieros registrados para un usuario específico."""
     conn = None
     try:
         conn = get_connection()
@@ -275,6 +311,7 @@ def obtener_movimientos(user_id):
         if conn: conn.close()
 
 def guardar_movimiento(tipo, monto, categoria, descripcion, fecha, user_id):
+    """Inserta un nuevo movimiento financiero en la base de datos."""
     conn = None
     try:
         conn = get_connection()
@@ -285,7 +322,6 @@ def guardar_movimiento(tipo, monto, categoria, descripcion, fecha, user_id):
         )
         conn.commit()
         cur.close()
-        st.cache_data.clear()
         return True
     except Exception as e:
         if conn: conn.rollback()
@@ -316,6 +352,7 @@ def eliminar_movimiento(id_mov, user_id):
             conn.close()
 
 def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fecha, user_id):
+    """Actualiza un movimiento financiero existente en la base de datos."""
     conn = None
     try:
         conn = get_connection()
@@ -336,11 +373,10 @@ def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fe
     finally:
         if conn: conn.close()
 
-# Añade esta línea para que coincida con la línea 1164 de tu app.py
 actualizar_movimiento_db = actualizar_movimiento
 
 # =============================================================================
-# 5. ESTRUCTURA PRINCIPAL DEL DASHBOARD
+# 5. ESTRUCTURA PRINCIPAL DEL DASHBOARD (PESTAÑAS)
 # =============================================================================
 st.title("💰 Control de Finanzas e Inversiones")
 
@@ -364,7 +400,7 @@ with tab_kpis:
     if not df_raw_kpi.empty:
         df_raw_kpi['fecha_dt'] = pd.to_datetime(df_raw_kpi['fecha'])
         
-        # Identificar inversiones para aislarlas del flujo operativo
+        # Aislar inversiones del flujo operativo
         plataformas_conocidas = ["fintual", "cetes", "nu", "finsus", "mercado pago", "gbm", "emergencia"]
         mask_inv = (
             df_raw_kpi['categoria'].str.contains("inversi", case=False, na=False) |
@@ -384,10 +420,8 @@ with tab_kpis:
                 tasa = 0.0
                 m = re.search(r"Tasa:\s*([\d\.]+)%", desc)
                 if m:
-                    try: 
-                        tasa = float(m.group(1))
-                    except: 
-                        pass
+                    try: tasa = float(m.group(1))
+                    except: pass
                 return pd.Series([plat, tasa], index=['Plataforma', 'Tasa (%)'])
 
             df_inv[['Plataforma', 'Tasa (%)']] = df_inv.apply(extraer_plat_tasa, axis=1)
@@ -402,7 +436,7 @@ with tab_kpis:
 
         df_flujo_kpi = df_raw_kpi[~mask_inv].copy()
 
-        # --- 1. CÁLCULOS HISTÓRICOS (DESDE INICIO DE REGISTROS) ---
+        # --- CÁLCULOS HISTÓRICOS ---
         mask_nomina_hist = (df_flujo_kpi['tipo'] == 'Ingreso') & (df_flujo_kpi['categoria'].str.contains("Nómina", case=False, na=False))
         total_nomina_historica = df_flujo_kpi[mask_nomina_hist]['monto'].sum()
 
@@ -417,7 +451,6 @@ with tab_kpis:
 
         total_gastos_historicos = gastos_debito_historicos + gastos_efectivo_historicos
 
-        # Saldos actuales de liquidez
         retiros_cajero = df_flujo_kpi[df_flujo_kpi['tipo'] == 'Retiro']['monto'].sum()
         saldo_debito = ingresos_totales_historicos - gastos_debito_historicos - retiros_cajero
 
@@ -428,7 +461,7 @@ with tab_kpis:
         liquidez_inmediata = saldo_debito + saldo_efectivo
         patrimonio_neto = liquidez_inmediata + total_inversiones
 
-        # --- 2. CÁLCULOS DEL CICLO DE NÓMINA CON REMANENTE ANTERIOR ---
+        # --- CÁLCULOS DEL CICLO DE NÓMINA ---
         hoy = pd.Timestamp(obtener_fecha_local())
         df_nominas_kpi = df_flujo_kpi[mask_nomina_hist].sort_values('fecha_dt', ascending=False)
 
@@ -437,7 +470,6 @@ with tab_kpis:
             ini_q = pd.Timestamp(ult_nom['fecha_dt'])
             monto_nom = float(ult_nom['monto'])
 
-            # Remanente acumulado antes del día del depósito de nómina
             df_previo = df_flujo_kpi[df_flujo_kpi['fecha_dt'] < ini_q.normalize()]
             ing_prev = df_previo[df_previo['tipo'] == 'Ingreso']['monto'].sum()
             egr_prev = df_previo[df_previo['tipo'] == 'Egreso']['monto'].sum()
@@ -449,7 +481,6 @@ with tab_kpis:
 
         disponible_total_ciclo = monto_nom + remanente_anterior
 
-        # Movimientos dentro del ciclo actual
         df_ciclo_actual = df_flujo_kpi[df_flujo_kpi['fecha_dt'] >= ini_q.normalize()]
         
         mask_debito_ciclo = df_ciclo_actual['descripcion'].str.contains("Débito", na=False) | (~df_ciclo_actual['descripcion'].str.contains("Efectivo", na=False))
@@ -459,106 +490,42 @@ with tab_kpis:
 
         pct_real_gastado = (total_gastado_ciclo / disponible_total_ciclo * 100) if disponible_total_ciclo > 0 else 0.0
 
-        # =====================================================================
-        # DESPLIEGUE EN INTERFAZ
-        # =====================================================================
-
-        # BLOQUE A: PATRIMONIO Y LIQUIDEZ ACTUAL
+        # --- DESPLIEGUE VISUAL KPI ---
         st.markdown("#### 🏦 Balance Actual")
         kpi1, kpi2, kpi3, kpi4 = st.columns(4)
-        kpi1.metric("🌐 Patrimonio Neto Total", fmt_monto(patrimonio_neto), help="Débito + Efectivo + Inversiones")
-        kpi2.metric("💧 Liquidez Inmediata", fmt_monto(liquidez_inmediata), help="Saldo disponible en Banco y Bolsillo")
-        kpi3.metric("📈 Capital Invertido", fmt_monto(total_inversiones), help="Suma de CETES, Nu, Fintual, etc.")
-        kpi4.metric("💰 Rendimiento Pasivo Est.", fmt_monto(rendimiento_mensual_est), delta=f"+${rendimiento_mensual_est*12:,.2f}/año", delta_color="normal")
+        kpi1.metric("🌐 Patrimonio Neto Total", fmt_monto(patrimonio_neto))
+        kpi2.metric("💧 Liquidez Inmediata", fmt_monto(liquidez_inmediata))
+        kpi3.metric("📈 Capital Invertido", fmt_monto(total_inversiones))
+        kpi4.metric("💰 Rendimiento Pasivo Est.", fmt_monto(rendimiento_mensual_est), delta=f"+${rendimiento_mensual_est*12:,.2f}/año")
 
         st.markdown("---")
 
-        # BLOQUE B: MONITOREO DEL CICLO ACTIVO CON REMANENTE (15 al 29)
         st.markdown(f"#### 💳 Ciclo de Nómina Activo *(Desde {ini_q.strftime('%d/%m/%Y')})*")
         cg1, cg2, cg3, cg4 = st.columns(4)
         
         with cg1:
-            st.metric(
-                "💰 Disponible Total Ciclo", 
-                fmt_monto(disponible_total_ciclo)
-            )
+            st.metric("💰 Disponible Total Ciclo", fmt_monto(disponible_total_ciclo))
             st.caption(f"🟢 **Nómina:** {fmt_monto(monto_nom)} | **Remanente:** {fmt_monto(remanente_anterior)}")
         
-        cg2.metric(
-            "💳 Gastado Débito (Ciclo)", 
-            fmt_monto(gastos_debito_ciclo), 
-            delta_color="inverse"
-        )
+        cg2.metric("💳 Gastado Débito (Ciclo)", fmt_monto(gastos_debito_ciclo), delta_color="inverse")
+        cg3.metric("👛 Gastado Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
         
-        cg3.metric(
-            "👛 Gastado Efectivo (Ciclo)", 
-            fmt_monto(gastos_efectivo_ciclo), 
-            delta_color="inverse"
-        )
-        
-        # Muestra el Saldo Real Disponible en Débito ($6,342.92)
         pct_saldo_debito = (saldo_debito / disponible_total_ciclo * 100) if disponible_total_ciclo > 0 else 0.0
-        
-        cg4.metric(
-            "💵 Saldo Disponible en Débito", 
-            fmt_monto(saldo_debito), 
-            delta=f"{pct_saldo_debito:.1f}% disponible en banco", 
-            delta_color="normal"
-        )
+        cg4.metric("💵 Saldo Disponible en Débito", fmt_monto(saldo_debito), delta=f"{pct_saldo_debito:.1f}% disponible en banco")
 
         st.markdown("---")
 
-        # BLOQUE C: HISTÓRICO ACUMULADO (DESDE EL INICIO)
-        st.markdown("#### 📜 Acumulado Histórico *(Desde el inicio de registros)*")
+        st.markdown("#### 📜 Acumulado Histórico")
         ch1, ch2, ch3, ch4 = st.columns(4)
-        ch1.metric("💼 Total Nómina Ingresada", fmt_monto(total_nomina_historica), help="Suma total de todas tus nóminas registradas")
-        ch2.metric("💳 Total Gastado en Débito", fmt_monto(gastos_debito_historicos), help="Suma de todos los egresos con tarjeta de débito", delta_color="inverse")
-        ch3.metric("👛 Total Gastado en Efectivo", fmt_monto(gastos_efectivo_historicos), help="Suma de todos los egresos en efectivo", delta_color="inverse")
-        ch4.metric("💸 Total Gastos Históricos", fmt_monto(total_gastos_historicos), help="Débito + Efectivo combinados", delta_color="inverse")
+        ch1.metric("💼 Total Nómina Ingresada", fmt_monto(total_nomina_historica))
+        ch2.metric("💳 Total Gastado en Débito", fmt_monto(gastos_debito_historicos))
+        ch3.metric("👛 Total Gastado en Efectivo", fmt_monto(gastos_efectivo_historicos))
+        ch4.metric("💸 Total Gastos Históricos", fmt_monto(total_gastos_historicos))
 
         st.markdown("---")
 
-        # BLOQUE D: GRÁFICOS Y SEMÁFORO
-        col_graf_kpi1, col_graf_kpi2 = st.columns([1, 1])
-
-        with col_graf_kpi1:
-            st.markdown("#### 📊 Distribución Global de Activos")
-            data_distribucion = pd.DataFrame({
-                'Activo': ['💳 Tarjeta Débito', '💵 Billetera / Efectivo', '📈 Portafolio Inversión'],
-                'Monto': [max(0, saldo_debito), max(0, saldo_efectivo), max(0, total_inversiones)]
-            })
-
-            fig_dist = px.pie(
-                data_distribucion, values='Monto', names='Activo', hole=0.45,
-                color_discrete_sequence=['#496a81', '#669bbc', '#2E7D32']
-            )
-            fig_dist.update_traces(textinfo='percent+label')
-            fig_dist.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
-            st.plotly_chart(fig_dist, use_container_width=True)
-
-        with col_graf_kpi2:
-            st.markdown("#### 🚨 Semáforo de Ritmo Quincenal")
-
-            st.write(f"**Disponible del ciclo (Nómina + Remanente):** {fmt_monto(disponible_total_ciclo)}")
-            st.write(f"**Gastado en el ciclo:** {fmt_monto(total_gastado_ciclo)} ({pct_real_gastado:.1f}%)")
-            st.progress(min(1.0, pct_real_gastado / 100))
-
-            if pct_real_gastado < 70:
-                st.success("🟢 **Saludable:** Mantienes un ritmo de gasto controlado para este ciclo.")
-            elif pct_real_gastado <= 90:
-                st.warning("🟡 **Precaución:** Has superado el 70% de consumo de tu disponible total.")
-            else:
-                st.error("🔴 **Freno de Mano:** Cerca o por encima del límite de tu presupuesto acumulado.")
-
-        st.markdown("---")
-
-        # =========================================================
-        # GRÁFICA CON FILTRO POR FECHAS: DESTINO Y COMPOSICIÓN DE LA NÓMINA
-        # =========================================================
+        # --- FILTRO POR FECHA Y GRÁFICA DE DESTINO DE LA NÓMINA ---
         st.markdown("#### 🍩 Destino y Composición de la Nómina del Ciclo")
-        st.caption("Filtra por periodo para analizar cómo se distribuyó el disponible entre TDC, débito, efectivo y saldo libre.")
-
-        # --- CONTROLES DE FILTRO POR FECHA ---
         col_f1, col_f2 = st.columns([1, 2])
         with col_f1:
             fecha_inicio_default = ini_q.date()
@@ -570,20 +537,17 @@ with tab_kpis:
                 key="filtro_fechas_grafica_destino"
             )
 
-        # Validación y extracción del rango seleccionado
         if isinstance(rango_fechas, tuple) and len(rango_fechas) == 2:
             f_inicio, f_fin = rango_fechas
         else:
             f_inicio, f_fin = fecha_inicio_default, fecha_fin_default
 
-        # Filtrar el DataFrame según el rango de fechas seleccionado
         mask_fechas = (
             (df_flujo_kpi['fecha_dt'].dt.date >= f_inicio) & 
             (df_flujo_kpi['fecha_dt'].dt.date <= f_fin)
         )
         df_filtrado_grafica = df_flujo_kpi[mask_fechas].copy()
 
-        # --- CÁLCULOS SOBRE EL PERIODO FILTRADO ---
         mask_nom_filtro = (df_filtrado_grafica['tipo'] == 'Ingreso') & (df_filtrado_grafica['categoria'].str.contains("Nómina", case=False, na=False))
         monto_nomina_filtrado = df_filtrado_grafica[mask_nom_filtro]['monto'].sum()
         
@@ -609,29 +573,14 @@ with tab_kpis:
         saldo_libre_filtrado = max(0.0, base_disponible_periodo - total_gastos_periodo)
 
         df_destino_nomina = pd.DataFrame({
-            "Destino": [
-                "💳 Pagos a TDC", 
-                "🔵 Gastos en Débito", 
-                "👛 Gastos en Efectivo", 
-                "🟢 Saldo Libre / Disponible"
-            ],
-            "Monto": [
-                pagos_tdc_filtrado, 
-                gastos_debito_puros, 
-                gastos_efectivo_filtrado, 
-                saldo_libre_filtrado
-            ]
+            "Destino": ["💳 Pagos a TDC", "🔵 Gastos en Débito", "👛 Gastos en Efectivo", "🟢 Saldo Libre / Disponible"],
+            "Monto": [pagos_tdc_filtrado, gastos_debito_puros, gastos_efectivo_filtrado, saldo_libre_filtrado]
         })
-
         df_destino_nomina = df_destino_nomina[df_destino_nomina["Monto"] > 0]
 
         if not df_destino_nomina.empty:
-            # 1. GRÁFICA DE ROSQUILLA CON TEXTO CENTRAL
             fig_destino = px.pie(
-                df_destino_nomina, 
-                values="Monto", 
-                names="Destino", 
-                hole=0.50,
+                df_destino_nomina, values="Monto", names="Destino", hole=0.50,
                 color_discrete_map={
                     "💳 Pagos a TDC": "#85a2b6",
                     "🔵 Gastos en Débito": "#496a81",
@@ -639,50 +588,14 @@ with tab_kpis:
                     "🟢 Saldo Libre / Disponible": "#2E7D32"
                 }
             )
-            
-            fig_destino.update_traces(
-                textposition='inside', 
-                textinfo='percent+label',
-                hovertemplate='<b>%{label}</b><br>Monto: $%{value:,.2f}<br>Porcentaje: %{percent}'
-            )
-            
             fig_destino.update_layout(
-                annotations=[dict(
-                    text=f"<b>Base Periodo</b><br>{fmt_monto(base_disponible_periodo)}", 
-                    x=0.5, y=0.5, 
-                    font_size=15, 
-                    showarrow=False
-                )],
-                height=550, 
-                showlegend=False,
-                margin=dict(t=20, b=20, l=10, r=10)
+                annotations=[dict(text=f"<b>Base Periodo</b><br>{fmt_monto(base_disponible_periodo)}", x=0.5, y=0.5, font_size=15, showarrow=False)],
+                height=550, showlegend=False, margin=dict(t=20, b=20, l=10, r=10)
             )
-            
             st.plotly_chart(fig_destino, use_container_width=True)
 
-            # 2. MUESTRA NUMÉRICA EN TARJETAS DE MÉTRICAS
-            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
-            col_m1.metric("💳 Pagos a TDC", fmt_monto(pagos_tdc_filtrado))
-            col_m2.metric("🔵 Gastos en Débito", fmt_monto(gastos_debito_puros))
-            col_m3.metric("👛 Gastos en Efectivo", fmt_monto(gastos_efectivo_filtrado))
-            col_m4.metric("🟢 Saldo Libre", fmt_monto(saldo_libre_filtrado))
-
-            # 3. DIAGNÓSTICO FINANCIERO DINÁMICO
-            pct_tdc = (pagos_tdc_filtrado / base_disponible_periodo * 100) if base_disponible_periodo > 0 else 0
-            pct_libre = (saldo_libre_filtrado / base_disponible_periodo * 100) if base_disponible_periodo > 0 else 0
-
-            if pct_tdc > 35:
-                st.warning(f"⚠️ **Atención en Deuda:** El **{pct_tdc:.1f}%** de tu disponible se destinó a pagar TDC en este periodo. Se recomienda mantener este rubro por debajo del 30%.")
-            elif pct_libre < 10:
-                st.info(f"💡 **Margen Ajustado:** Te queda un **{pct_libre:.1f}%** de saldo libre. Intenta reducir egresos en efectivo/débito para ampliar tu margen de ahorro al 15%.")
-            else:
-                st.success(f"🟢 **Distribución Saludable:** Conservas un **{pct_libre:.1f}%** de saldo libre y mantienes el pago de deuda controlado.")
-
-        else:
-            st.info("💡 No hay movimientos registrados en el rango de fechas seleccionado.")
-        
 # =============================================================================
-# PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA
+# PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA (CON FILTRO DE MÉTODO DE PAGO)
 # =============================================================================
 with tab_flujo:
     
@@ -745,11 +658,9 @@ with tab_flujo:
                 ultima_nomina = df_nominas.iloc[0]
                 inicio_q = pd.Timestamp(ultima_nomina['fecha'])
                 nomina_ingresada_ciclo = float(ultima_nomina['monto'])
-                etiqueta_q = f"Ciclo Activo (Nómina del {inicio_q.strftime('%d/%m/%Y')})"
             else:
                 inicio_q = hoy_ts.replace(day=1)
                 nomina_ingresada_ciclo = 0.0
-                etiqueta_q = "Ciclo Inicial (Sin registro de nómina)"
 
             fin_q = hoy_ts 
             df_q_actual = df_flujo[(df_flujo['fecha'] >= inicio_q.normalize()) & (df_flujo['fecha'] <= fin_q.normalize())]
@@ -771,68 +682,50 @@ with tab_flujo:
             col_q3.metric("💵 Gastos en Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
             col_q4.metric("🏦 Nómina Recibida", fmt_monto(nomina_ingresada_ciclo))
 
-            # --- RESTAURACIÓN DE GRÁFICO EN FLUJO QUINCENAL ---
-            st.markdown("---")
-            col_graf_flujo1, col_graf_flujo2 = st.columns([1, 1])
-
-            with col_graf_flujo1:
-                st.markdown("#### 🛒 Desglose de Gastos por Categoría")
-                df_egresos = df_flujo[df_flujo['tipo'] == 'Egreso']
-                if not df_egresos.empty:
-                    gastos_cat = df_egresos.groupby('categoria')['monto'].sum().reset_index()
-                    fig_cat = px.bar(
-                        gastos_cat, x='monto', y='categoria', orientation='h',
-                        color='monto', color_continuous_scale='Reds',
-                        text_auto='.2f', labels={'monto': 'Total ($)', 'categoria': 'Categoría'}
-                    )
-                    fig_cat.update_layout(showlegend=False, coloraxis_showscale=False, margin=dict(t=10, b=10, l=10, r=10))
-                    st.plotly_chart(fig_cat, use_container_width=True)
-                else:
-                    st.info("No hay egresos registrados para graficar.")
-
-            with col_graf_flujo2:
-                st.markdown("#### 🚨 Control y Ritmo de Gasto")
-                dia_pago = inicio_q.day
-                if dia_pago >= 25 or dia_pago <= 5:
-                    if inicio_q.day >= 25:
-                        mes_target = inicio_q.month + 1 if inicio_q.month < 12 else 1
-                        anio_target = inicio_q.year if inicio_q.month < 12 else inicio_q.year + 1
-                        fecha_estimada_fin = pd.Timestamp(year=anio_target, month=mes_target, day=15)
-                    else:
-                        fecha_estimada_fin = inicio_q.replace(day=15)
-                else:
-                    proximo_mes = (inicio_q.replace(day=28) + pd.Timedelta(days=4))
-                    fecha_estimada_fin = proximo_mes.replace(day=1) - pd.Timedelta(days=1)
-
-                dias_restantes = max((fecha_estimada_fin.date() - hoy_date).days + 1, 1)
-                gasto_diario_sugerido = nomina_restante / dias_restantes if nomina_restante > 0 else 0.00
-
-                st.metric("⏳ Días Est. para Próximo Pago", f"{dias_restantes} días", delta=f"Proyectado al {fecha_estimada_fin.strftime('%d/%m')}")
-                st.metric("💳 Gasto Diario Máximo Sugerido", fmt_monto(gasto_diario_sugerido))
-
             st.markdown("---")
 
-            # --- TABLA DE HISTORIAL Y FILTROS EN FLUJO ---
+            # --- TABLA DE HISTORIAL Y NUEVOS FILTROS (INCLUYENDO MÉTODO DE PAGO) ---
             st.markdown("### 📋 Historial Completo de Nómina y Gastos")
             df_display = df_flujo.copy()
             df_display['fecha_str'] = df_display['fecha'].dt.strftime('%Y-%m-%d')
             
-            with st.expander("🔍 Filtros de Búsqueda", expanded=False):
-                col_f_flujo1, col_f_flujo2, col_f_flujo3 = st.columns(3)
+            with st.expander("🔍 Filtros de Búsqueda Avanzada", expanded=False):
+                col_f_flujo1, col_f_flujo2, col_f_flujo3, col_f_flujo4 = st.columns(4)
+                
                 with col_f_flujo1:
                     min_fecha_f = df_display['fecha'].min().date()
                     max_fecha_f = df_display['fecha'].max().date()
                     f_rango = st.date_input("Rango de Fechas", [min_fecha_f, max_fecha_f], key="f_rango_flujo")
+                    
                 with col_f_flujo2:
                     tipos_disponibles = ["Todos"] + list(df_display['tipo'].unique())
                     f_tipo = st.selectbox("Tipo de Movimiento", tipos_disponibles, key="f_tipo_flujo")
+                    
                 with col_f_flujo3:
-                    f_texto = st.text_input("Buscar en Descripción / Categoría", "", key="f_texto_flujo")
+                    # NUEVO FILTRO: Método de Pago basado en el prefijo de la descripción
+                    f_metodo = st.selectbox(
+                        "💳 Método de Pago", 
+                        ["Todos", "Tarjeta de Débito", "Efectivo"], 
+                        help="Filtra si el movimiento se pagó con tarjeta de débito o en efectivo.",
+                        key="f_metodo_pago"
+                    )
+                    
+                with col_f_flujo4:
+                    f_texto = st.text_input("Buscar Descripción / Categoría", "", key="f_texto_flujo")
 
+            # Aplicar filtros al DataFrame de visualización
             if isinstance(f_rango, (list, tuple)) and len(f_rango) == 2:
                 df_display = df_display[(df_display['fecha'].dt.date >= f_rango[0]) & (df_display['fecha'].dt.date <= f_rango[1])]
+            
             if f_tipo != "Todos":
                 df_display = df_display[df_display['tipo'] == f_tipo]
+                
+            if f_metodo != "Todos":
+                if f_metodo == "Tarjeta de Débito":
+                    df_display = df_display[df_display['descripcion'].str.contains("Débito", case=False, na=False) | (~df_display['descripcion'].str.contains("Efectivo", case=False, na=False))]
+                elif f_metodo == "Efectivo":
+                    df_display = df_display[df_display['descripcion'].str.contains("Efectivo", case=False, na=False)]
+
             if f_texto:
                 df_display = df_display[
                     df_display['descripcion'].str.contains(f_texto, case=False, na=False) |
@@ -884,7 +777,6 @@ with tab_flujo:
                     with col_edit2:
                         st.markdown("#### 🗑️ Eliminar")
                         if st.button("❌ Borrar Registro", use_container_width=True):
-                            # Usamos USER_ID en mayúsculas como en el resto de tu pestaña
                             if eliminar_movimiento(id_seleccionado, USER_ID):
                                 st.success("✅ Registro eliminado.")
                                 st.rerun()
@@ -892,12 +784,12 @@ with tab_flujo:
             st.info("Aún no tienes movimientos registrados.")
     else:
         st.info("Aún no hay registros en la base de datos.")
+
 # =============================================================================
 # PESTAÑA 3: PORTAFOLIO DE INVERSIONES
 # =============================================================================
 with tab_ahorros:
     st.markdown("### 📈 Portafolio de Inversiones (CETES, Fintual, Nu)")
-
     current_user_id = st.session_state.get("user_id")
 
     with st.expander("➕ Registrar / Actualizar Saldo de Inversión", expanded=False):
@@ -922,240 +814,15 @@ with tab_ahorros:
                     st.success(f"✅ Portafolio de {plataforma} actualizado.")
                     st.rerun()
 
-    st.markdown("---")
-
-    df_raw = obtener_movimientos(current_user_id)
-    
-    if not df_raw.empty:
-        plataformas_conocidas = ["fintual", "cetes", "nu", "finsus", "mercado pago", "gbm", "emergencia"]
-        mask_inv = (
-            df_raw['categoria'].str.contains("inversi", case=False, na=False) |
-            df_raw['tipo'].str.contains("inversi", case=False, na=False) |
-            df_raw['categoria'].str.lower().str.contains('|'.join(plataformas_conocidas), na=False)
-        )
-        df_inversiones = df_raw[mask_inv].copy()
-        
-        if not df_inversiones.empty:
-            def extraer_datos_inv(row):
-                cat, desc = str(row['categoria']), str(row['descripcion'])
-                plat = cat.replace("Inversión - ", "").replace("Inversion - ", "").strip() if "Inversión - " in cat or "Inversion - " in cat else "General"
-                tasa = 0.0
-                m = re.search(r"Tasa:\s*([\d\.]+)%", desc)
-                if m:
-                    try: tasa = float(m.group(1))
-                    except: pass
-                return pd.Series([plat, tasa], index=['Plataforma', 'Tasa (%)'])
-
-            df_inversiones[['Plataforma', 'Tasa (%)']] = df_inversiones.apply(extraer_datos_inv, axis=1)
-            df_inversiones['fecha'] = pd.to_datetime(df_inversiones['fecha'])
-            df_inversiones = df_inversiones.sort_values(by=['Plataforma', 'fecha', 'id'])
-
-            resumen_filas = []
-            for plat, group in df_inversiones.groupby('Plataforma'):
-                reg = group.iloc[-1]
-                saldo_actual = reg['monto']
-                tasa_actual = reg['Tasa (%)']
-                ganancia_mensual = (saldo_actual * (tasa_actual / 100)) / 12
-
-                resumen_filas.append({
-                    "Plataforma": plat,
-                    "Saldo Actual": saldo_actual,
-                    "Tasa Anual (%)": tasa_actual,
-                    "Ganancia Est. / Mes": ganancia_mensual
-                })
-
-            df_resumen_inv = pd.DataFrame(resumen_filas)
-            
-            st.dataframe(
-                df_resumen_inv,
-                column_config={
-                    "Plataforma": "Fondo / Plataforma",
-                    "Saldo Actual": st.column_config.NumberColumn("Saldo Actual", format="$%.2f"),
-                    "Tasa Anual (%)": st.column_config.NumberColumn("Tasa Anual", format="%.2f%%"),
-                    "Ganancia Est. / Mes": st.column_config.NumberColumn("Est. Ganancia/Mes", format="$%.2f")
-                },
-                use_container_width=True,
-                hide_index=True
-            )
-
-            # --- RESTAURACIÓN DE GRÁFICOS EN INVERSIONES ---
-            st.markdown("---")
-            col_graf_inv1, col_graf_inv2 = st.columns(2)
-
-            with col_graf_inv1:
-                st.markdown("#### 🥧 Distribución del Portafolio")
-                fig_pie_inv = px.pie(
-                    df_resumen_inv, values='Saldo Actual', names='Plataforma', hole=0.4,
-                    color_discrete_sequence=px.colors.qualitative.Bold
-                )
-                fig_pie_inv.update_traces(textinfo='percent+label')
-                fig_pie_inv.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
-                st.plotly_chart(fig_pie_inv, use_container_width=True)
-
-            with col_graf_inv2:
-                st.markdown("#### 💸 Rendimiento Estimado por Fondo ($/Mes)")
-                fig_bar_inv = px.bar(
-                    df_resumen_inv, x='Plataforma', y='Ganancia Est. / Mes',
-                    color='Ganancia Est. / Mes', color_continuous_scale='Greens',
-                    text_auto='.2f'
-                )
-                fig_bar_inv.update_layout(coloraxis_showscale=False, margin=dict(t=10, b=10, l=10, r=10))
-                st.plotly_chart(fig_bar_inv, use_container_width=True)
-
 # =============================================================================
-# PESTAÑA 4: PRESUPUESTO 50/30/20 & FLUJO QUINCENAL
+# PESTAÑA 4: PRESUPUESTO 50/30/20
 # =============================================================================
 with tab_presupuesto:
     st.markdown("### 📊 Presupuesto Mensual (Regla 50 / 30 / 20)")
     st.caption("Planifica tus finanzas sobre tu ingreso total estimado del mes y monitorea el avance quincenal.")
 
-    current_user_id = st.session_state.get("user_id")
-    df_raw = obtener_movimientos(current_user_id)
-
-    with st.expander("⚙️ Configurar Ingreso Mensual Base", expanded=False):
-        col_inc1, col_inc2 = st.columns(2)
-        with col_inc1:
-            ingreso_q1 = st.number_input("Ingreso Neto 1.ª Quincena ($)", min_value=0.0, value=10000.0, step=500.0, format="%.2f")
-        with col_inc2:
-            ingreso_q2 = st.number_input("Ingreso Neto 2.ª Quincena ($)", min_value=0.0, value=10000.0, step=500.0, format="%.2f")
-        
-        ingreso_mensual_total = ingreso_q1 + ingreso_q2
-        st.info(f"💡 **Ingreso Total Estimado del Mes:** {fmt_monto(ingreso_mensual_total)}")
-
-    # Cálculo de límites teóricos según la regla 50/30/20
-    limite_necesidades = ingreso_mensual_total * 0.50
-    limite_deseos = ingreso_mensual_total * 0.30
-    limite_ahorro = ingreso_mensual_total * 0.20
-
-    st.markdown("---")
-
-    col_p1, col_p2, col_p3 = st.columns(3)
-    col_p1.metric(
-        label="🏠 50% Necesidades / Fijos", 
-        value=fmt_monto(limite_necesidades), 
-        help="Renta, plan celular, despensa básica y servicios vitales."
-    )
-    col_p2.metric(
-        label="🎉 30% Deseos / Estilo de Vida", 
-        value=fmt_monto(limite_deseos), 
-        help="Salidas de fin de semana, hobbies, entretenimiento."
-    )
-    col_p3.metric(
-        label="🛡️ 20% Ahorro / Inversión", 
-        value=fmt_monto(limite_ahorro), 
-        help="Fondo de emergencia, Cajita Nu, Cetes, Finsus."
-    )
-
-    st.markdown("---")
-
-    # Comparativa entre presupuesto y gasto real consumido durante el mes
-    if not df_raw.empty:
-        df_raw['fecha'] = pd.to_datetime(df_raw['fecha'])
-        
-        fecha_actual = obtener_fecha_local()
-        df_mes = df_raw[(df_raw['fecha'].dt.month == fecha_actual.month) & (df_raw['fecha'].dt.year == fecha_actual.year)].copy()
-
-        mask_gastos = df_mes['tipo'].str.lower().str.contains("gasto|salida|egreso", na=False)
-        df_gastos_mes = df_mes[mask_gastos].copy()
-
-        mask_fijos = df_gastos_mes['categoria'].str.lower().str.contains("renta|celular|plan|servicio|luz|agua|despensa", na=False)
-        mask_ahorro = df_gastos_mes['tipo'].str.lower().str.contains("inversion|ahorro", na=False) | df_gastos_mes['categoria'].str.lower().str.contains("inversi|ahorro", na=False)
-        mask_deseos = ~mask_fijos & ~mask_ahorro
-
-        gasto_fijos_real = df_gastos_mes[mask_fijos]['monto'].sum()
-        gasto_ahorro_real = df_gastos_mes[mask_ahorro]['monto'].sum()
-        gasto_deseos_real = df_gastos_mes[mask_deseos]['monto'].sum()
-
-    else:
-        gasto_fijos_real = 0.0
-        gasto_deseos_real = 0.0
-        gasto_ahorro_real = 0.0
-
-    st.markdown("#### 📈 Ejecución de tu Presupuesto este Mes")
-
-    col_b1, col_b2, col_b3 = st.columns(3)
-
-    with col_b1:
-        st.markdown("**🏠 Gastos Fijos / Necesidades**")
-        pct_fijos = min(1.0, gasto_fijos_real / limite_necesidades) if limite_necesidades > 0 else 0
-        st.progress(pct_fijos)
-        if ocultar_saldos:
-            st.caption("•••••• de ••••••")
-        else:
-            st.caption(f"Gastado: **${gasto_fijos_real:,.2f}** / **${limite_necesidades:,.2f}** ({pct_fijos*100:.1f}%)")
-
-    with col_b2:
-        st.markdown("**🎉 Deseos y Salidas (Efectivo / Gustos)**")
-        pct_deseos = min(1.0, gasto_deseos_real / limite_deseos) if limite_deseos > 0 else 0
-        st.progress(pct_deseos)
-        if ocultar_saldos:
-            st.caption("•••••• de ••••••")
-        else:
-            st.caption(f"Gastado: **${gasto_deseos_real:,.2f}** / **${limite_deseos:,.2f}** ({pct_deseos*100:.1f}%)")
-            st.info(f"💡 Te quedan **${max(0.0, limite_deseos - gasto_deseos_real):,.2f}** libres para salidas.")
-
-    with col_b3:
-        st.markdown("**🛡️ Meta de Ahorro e Inversión (20%)**")
-        pct_ahorro = min(1.0, gasto_ahorro_real / limite_ahorro) if limite_ahorro > 0 else 0
-        st.progress(pct_ahorro)
-        if ocultar_saldos:
-            st.caption("•••••• de ••••••")
-        else:
-            st.caption(f"Aportado: **${gasto_ahorro_real:,.2f}** / **${limite_ahorro:,.2f}** ({pct_ahorro*100:.1f}%)")
-
-    st.markdown("---")
-
-    # --- GRÁFICO CONSERVADO ---
-    st.markdown("#### 📐 Distribución Teórica de tus Ingresos")
-    df_pres_graf = pd.DataFrame({
-        'Rubro': ['🏠 Necesidades (50%)', '🎉 Deseos (30%)', '🛡️ Ahorro/Inversión (20%)'],
-        'Monto Asignado': [limite_necesidades, limite_deseos, limite_ahorro]
-    })
-    fig_pres = px.bar(
-        df_pres_graf, x='Rubro', y='Monto Asignado', color='Rubro',
-        color_discrete_sequence=['#496a81', '#8c7a6b', '#2E7D32'],
-        text_auto='.2f'
-    )
-    fig_pres.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
-    st.plotly_chart(fig_pres, use_container_width=True)
-
-    st.markdown("---")
-
-    # Guía de estrategia de flujo de efectivo por quincena
-    st.markdown("### 🗓️ Estrategia de Flujo de Caja Quincenal")
-    st.caption("Nivelación de compromisos entre la 1.ª y 2.ª Quincena.")
-
-    tab_q1_p, tab_q2_p = st.tabs(["1.ª Quincena (Días 1 - 15)", "2.ª Quincena (Días 16 - Fin de mes)"])
-
-    with tab_q1_p:
-        st.markdown("#### 🟢 1.ª Quincena (Ciclo Ligero)")
-        col_q1_a, col_q1_b = st.columns(2)
-        
-        with col_q1_a:
-            st.subheader("Compromisos Obligatorios")
-            st.markdown("- **Salidas Fines de Semana (2 fines):** ~$3,200.00 MXN *(Efectivo)*")
-            st.markdown("- **Reserva 50% de Renta:** Apartar para la 2ª Quincena.")
-            st.markdown("- **Págate a ti mismo (10% Ahorro Q1):** Directo a Nu / Cetes.")
-        
-        with col_q1_b:
-            st.warning("💡 **Tip Q1:** Como no pagas Renta en esta quincena, **guarda el 50% de la renta en una Cajita** inmediatamente al cobrar para que no sientas la 2ª quincena pesada.")
-
-    with tab_q2_p:
-        st.markdown("#### 🔴 2.ª Quincena (Ciclo Pesado)")
-        col_q2_a, col_q2_b = st.columns(2)
-        
-        with col_q2_a:
-            st.subheader("Compromisos Obligatorios")
-            st.markdown("- **Renta:** Pago completo (Completado con reserva de la Q1).")
-            st.markdown("- **Plan de Celular:** Pago recurrente.")
-            st.markdown("- **Salidas Fines de Semana (2 fines):** ~$3,200.00 MXN *(Efectivo)*")
-            st.markdown("- **Págate a ti mismo (10% Ahorro Q2):** Directo a Nu / Cetes.")
-            
-        with col_q2_b:
-            st.success("✅ Si apartaste el 50% de la renta durante la Q1, esta quincena fluirá con la misma tranquilidad que la primera.")
-
 # =============================================================================
-# PESTAÑA 4: BILLETERA Y EFECTIVO
+# PESTAÑA 5: BILLETERA Y EFECTIVO
 # =============================================================================
 with tab_efectivo:
     st.header("👛 Control de Billetera y Efectivo")
@@ -1334,7 +1001,7 @@ with tab_efectivo:
                     if st.button("🗑️ Eliminar Registro", use_container_width=True, type="secondary", key="btn_del_ef"):
                         st.session_state.confirmar_del_ef = True
 
-                # Cuadro de confirmación previa para evitar pérdidas accidental
+                # Cuadro de confirmación previa para evitar pérdidas accidentales
                 if st.session_state.get("confirmar_del_ef", False):
                     st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar el registro ID **{id_sel_ef}** ({row_sel_ef['descripcion']} - {fmt_monto(row_sel_ef['monto'])})?")
                     c_del_confirm, c_del_cancel = st.columns(2)
