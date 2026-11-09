@@ -513,8 +513,12 @@ with tab_kpis:
 
         st.markdown("---")
 
-        # --- FILTRO POR FECHA Y GRÁFICA DE DESTINO DE LA NÓMINA (CON LEYENDA RESTAURADA) ---
+        # =========================================================
+        # GRÁFICA CORREGIDA: DESTINO DE LA NÓMINA CON SALDO REAL
+        # =========================================================
         st.markdown("#### 🍩 Destino y Composición de la Nómina del Ciclo")
+        st.caption("Filtra por periodo para analizar la distribución de tus egresos alineada con tu saldo bancario real.")
+
         col_f1, col_f2 = st.columns([1, 2])
         with col_f1:
             fecha_inicio_default = ini_q.date()
@@ -531,17 +535,14 @@ with tab_kpis:
         else:
             f_inicio, f_fin = fecha_inicio_default, fecha_fin_default
 
+        # Filtrado de egresos por rango de fechas seleccionado
         mask_fechas = (
             (df_flujo_kpi['fecha_dt'].dt.date >= f_inicio) & 
             (df_flujo_kpi['fecha_dt'].dt.date <= f_fin)
         )
         df_filtrado_grafica = df_flujo_kpi[mask_fechas].copy()
 
-        mask_nom_filtro = (df_filtrado_grafica['tipo'] == 'Ingreso') & (df_filtrado_grafica['categoria'].str.contains("Nómina", case=False, na=False))
-        monto_nomina_filtrado = df_filtrado_grafica[mask_nom_filtro]['monto'].sum()
-        
-        base_disponible_periodo = disponible_total_ciclo if (f_inicio == fecha_inicio_default and f_fin == fecha_fin_default) else monto_nomina_filtrado
-
+        # 1. Identificar Pagos a TDC
         mask_tdc_filtrado = (
             (df_filtrado_grafica['tipo'] == 'Egreso') & 
             (
@@ -551,25 +552,44 @@ with tab_kpis:
         )
         pagos_tdc_filtrado = df_filtrado_grafica[mask_tdc_filtrado]['monto'].sum()
 
+        # 2. Identificar Gastos en Débito Puros (excluyendo TDC)
         mask_debito_filtrado = (df_filtrado_grafica['tipo'] == 'Egreso') & (~df_filtrado_grafica['descripcion'].str.contains("Efectivo", case=False, na=False))
         gastos_debito_totales = df_filtrado_grafica[mask_debito_filtrado]['monto'].sum()
         gastos_debito_puros = max(0.0, gastos_debito_totales - pagos_tdc_filtrado)
 
+        # 3. Identificar Gastos en Efectivo
         mask_efectivo_filtrado = (df_filtrado_grafica['tipo'] == 'Egreso') & (df_filtrado_grafica['descripcion'].str.contains("Efectivo", case=False, na=False))
         gastos_efectivo_filtrado = df_filtrado_grafica[mask_efectivo_filtrado]['monto'].sum()
 
-        total_gastos_periodo = pagos_tdc_filtrado + gastos_debito_puros + gastos_efectivo_filtrado
-        saldo_libre_filtrado = max(0.0, base_disponible_periodo - total_gastos_periodo)
+        # 4. SALDO LIBRE VINCULADO AL BANCO REAL (Sincronizado con Saldo Disponible en Débito)
+        saldo_libre_filtrado = max(0.0, saldo_debito)
+
+        # 5. BASE DE GRÁFICA REAL
+        base_disponible_periodo = saldo_libre_filtrado + pagos_tdc_filtrado + gastos_debito_puros + gastos_efectivo_filtrado
 
         df_destino_nomina = pd.DataFrame({
-            "Destino": ["💳 Pagos a TDC", "🔵 Gastos en Débito", "👛 Gastos en Efectivo", "🟢 Saldo Libre / Disponible"],
-            "Monto": [pagos_tdc_filtrado, gastos_debito_puros, gastos_efectivo_filtrado, saldo_libre_filtrado]
+            "Destino": [
+                "💳 Pagos a TDC", 
+                "🔵 Gastos en Débito", 
+                "👛 Gastos en Efectivo", 
+                "🟢 Saldo Libre / Disponible"
+            ],
+            "Monto": [
+                pagos_tdc_filtrado, 
+                gastos_debito_puros, 
+                gastos_efectivo_filtrado, 
+                saldo_libre_filtrado
+            ]
         })
+
         df_destino_nomina = df_destino_nomina[df_destino_nomina["Monto"] > 0]
 
         if not df_destino_nomina.empty:
             fig_destino = px.pie(
-                df_destino_nomina, values="Monto", names="Destino", hole=0.50,
+                df_destino_nomina, 
+                values="Monto", 
+                names="Destino", 
+                hole=0.50,
                 color="Destino",
                 color_discrete_map={
                     "💳 Pagos a TDC": "#EF4444",
@@ -578,25 +598,34 @@ with tab_kpis:
                     "🟢 Saldo Libre / Disponible": "#60A5FA"
                 }
             )
+            
             fig_destino.update_traces(
                 textposition='auto', 
                 textinfo='percent+label',
                 hovertemplate='<b>%{label}</b><br>Monto: $%{value:,.2f}<br>Porcentaje: %{percent}'
             )
+            
             fig_destino.update_layout(
-                annotations=[dict(text=f"<b>Base Periodo</b><br>{fmt_monto(base_disponible_periodo)}", x=0.5, y=0.5, font_size=15, showarrow=False)],
+                annotations=[dict(
+                    text=f"<b>Total Evaluado</b><br>{fmt_monto(base_disponible_periodo)}", 
+                    x=0.5, y=0.5, 
+                    font_size=15, 
+                    showarrow=False
+                )],
                 height=500, 
                 showlegend=True,
                 legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
                 margin=dict(t=20, b=40, l=10, r=10)
             )
+            
             st.plotly_chart(fig_destino, use_container_width=True)
 
+            # Tarjetas de métricas numéricas inferiores
             col_m1, col_m2, col_m3, col_m4 = st.columns(4)
             col_m1.metric("💳 Pagos a TDC", fmt_monto(pagos_tdc_filtrado))
             col_m2.metric("🔵 Gastos en Débito", fmt_monto(gastos_debito_puros))
             col_m3.metric("👛 Gastos en Efectivo", fmt_monto(gastos_efectivo_filtrado))
-            col_m4.metric("🟢 Saldo Libre", fmt_monto(saldo_libre_filtrado))
+            col_m4.metric("🟢 Saldo Libre", fmt_monto(saldo_libre_filtrado), help="Cuadra 100% con tu Saldo Disponible en Débito")
 
 # =============================================================================
 # PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA (RESTAURADA CON GRÁFICA Y CONTROL DE DÍAS)
