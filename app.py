@@ -599,7 +599,7 @@ with tab_kpis:
             col_m4.metric("🟢 Saldo Libre", fmt_monto(saldo_libre_filtrado))
 
 # =============================================================================
-# PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA (SINCRONIZADO AL 100% CON LA DONA)
+# PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA (RESTAURADA CON GRÁFICA Y CONTROL DE DÍAS)
 # =============================================================================
 with tab_flujo:
     
@@ -646,70 +646,53 @@ with tab_flujo:
         df_flujo = df_raw[~mask_inversion].copy()
         
         if not df_flujo.empty:
-            df_flujo['fecha_dt'] = pd.to_datetime(df_flujo['fecha'])
+            df_flujo['fecha'] = pd.to_datetime(df_flujo['fecha'])
             fecha_local_actual = obtener_fecha_local()
             hoy_ts = pd.Timestamp(fecha_local_actual)
             hoy_date = fecha_local_actual
 
-            # --- LÓGICA DE DICCIONARIO / CICLO IDENTICO A LA DONA ---
+            st.markdown("### 📅 Ciclo de Nómina Actual")
+            
             df_nominas = df_flujo[
                 (df_flujo['tipo'] == 'Ingreso') & 
                 (df_flujo['categoria'].str.contains("Nómina", case=False, na=False))
-            ].sort_values('fecha_dt', ascending=False)
+            ].sort_values('fecha', ascending=False)
 
             if not df_nominas.empty:
                 ultima_nomina = df_nominas.iloc[0]
-                inicio_q = pd.Timestamp(ultima_nomina['fecha_dt'])
-                monto_nom = float(ultima_nomina['monto'])
-
-                # Remanente previo al ciclo actual
-                df_previo = df_flujo[df_flujo['fecha_dt'] < inicio_q.normalize()]
-                ing_prev = df_previo[df_previo['tipo'] == 'Ingreso']['monto'].sum()
-                egr_prev = df_previo[df_previo['tipo'] == 'Egreso']['monto'].sum()
-                remanente_anterior = max(0.0, ing_prev - egr_prev)
+                inicio_q = pd.Timestamp(ultima_nomina['fecha'])
+                nomina_ingresada_ciclo = float(ultima_nomina['monto'])
             else:
                 inicio_q = hoy_ts.replace(day=1)
-                monto_nom = 0.0
-                remanente_anterior = 0.0
+                nomina_ingresada_ciclo = 0.0
 
-            base_disponible_ciclo = monto_nom + remanente_anterior
-
-            # Filtrar movimientos del ciclo activo
-            df_q_actual = df_flujo[df_flujo['fecha_dt'] >= inicio_q.normalize()]
+            fin_q = hoy_ts 
+            df_q_actual = df_flujo[(df_flujo['fecha'] >= inicio_q.normalize()) & (df_flujo['fecha'] <= fin_q.normalize())]
             
-            mask_tdc_q = (df_q_actual['tipo'] == 'Egreso') & (
-                df_q_actual['categoria'].str.contains("TDC|Tarjeta de Crédito|Credito", case=False, na=False) |
-                df_q_actual['descripcion'].str.contains("TDC|Tarjeta de Crédito|Credito", case=False, na=False)
-            )
-            pagos_tdc_ciclo = df_q_actual[mask_tdc_q]['monto'].sum()
-
-            mask_debito_q = (df_q_actual['tipo'] == 'Egreso') & (~df_q_actual['descripcion'].str.contains("Efectivo", case=False, na=False))
-            gastos_debito_totales_ciclo = df_q_actual[mask_debito_q]['monto'].sum()
-            gastos_debito_ciclo = max(0.0, gastos_debito_totales_ciclo - pagos_tdc_ciclo)
-
-            mask_efectivo_q = (df_q_actual['tipo'] == 'Egreso') & (df_q_actual['descripcion'].str.contains("Efectivo", case=False, na=False))
-            gastos_efectivo_ciclo = df_q_actual[mask_efectivo_q]['monto'].sum()
-
-            total_gastos_ciclo = pagos_tdc_ciclo + gastos_debito_ciclo + gastos_efectivo_ciclo
+            mask_debito_global = df_flujo['descripcion'].str.contains("Débito", na=False) | (~df_flujo['descripcion'].str.contains("Efectivo", na=False))
+            ingresos_totales_historicos = df_flujo[df_flujo['tipo'] == 'Ingreso']['monto'].sum()
+            gastos_debito_historicos = df_flujo[(df_flujo['tipo'] == 'Egreso') & mask_debito_global]['monto'].sum()
+            retiros_historicos = df_flujo[df_flujo['tipo'] == 'Retiro']['monto'].sum()
             
-            # SALDO LIBRE / DISPONIBLE DEL CICLO (CUADRA 100% CON LA DONA)
-            saldo_libre_ciclo = max(0.0, base_disponible_ciclo - total_gastos_ciclo)
+            nomina_restante = ingresos_totales_historicos - gastos_debito_historicos - retiros_historicos
 
-            st.markdown(f"### 📅 Ciclo de Nómina Actual *(Desde {inicio_q.strftime('%d/%m/%Y')})*")
+            mask_debito_q = df_q_actual['descripcion'].str.contains("Débito", na=False) | (~df_q_actual['descripcion'].str.contains("Efectivo", na=False))
+            gastos_debito_ciclo = df_q_actual[(df_q_actual['tipo'] == 'Egreso') & mask_debito_q]['monto'].sum()
+            gastos_efectivo_ciclo = df_q_actual[(df_q_actual['tipo'] == 'Egreso') & df_q_actual['descripcion'].str.contains("Efectivo", na=False)]['monto'].sum()
 
             col_q1, col_q2, col_q3, col_q4 = st.columns(4)
-            col_q1.metric("💳 Gastos con Débito", fmt_monto(gastos_debito_ciclo), delta_color="inverse")
-            col_q2.metric("💳 Pagos a TDC", fmt_monto(pagos_tdc_ciclo), delta_color="inverse")
-            col_q3.metric("💵 Gastos en Efectivo", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
-            col_q4.metric("🟢 Saldo Libre / Disponible", fmt_monto(saldo_libre_ciclo), help="Mismo valor disponible calculado en la gráfica de dona")
+            col_q1.metric("💵 Saldo Real en Débito (Acumulado)", fmt_monto(nomina_restante))
+            col_q2.metric("💳 Gastos con Débito (Ciclo)", fmt_monto(gastos_debito_ciclo), delta_color="inverse")
+            col_q3.metric("💵 Gastos en Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
+            col_q4.metric("🏦 Nómina Recibida", fmt_monto(nomina_ingresada_ciclo))
 
-            # --- SECCIÓN GRÁFICA DE BARRAS POR CATEGORÍA Y CONTROL DE DÍAS ---
+            # --- SECCIÓN RESTAURADA: GRÁFICO DE BARRAS POR CATEGORÍA Y RITMO DIARIO ---
             st.markdown("---")
             col_graf_flujo1, col_graf_flujo2 = st.columns([1, 1])
 
             with col_graf_flujo1:
                 st.markdown("#### 🛒 Desglose de Gastos por Categoría")
-                df_egresos = df_q_actual[df_q_actual['tipo'] == 'Egreso']
+                df_egresos = df_flujo[df_flujo['tipo'] == 'Egreso']
                 if not df_egresos.empty:
                     gastos_cat = df_egresos.groupby('categoria')['monto'].sum().reset_index()
                     fig_cat = px.bar(
@@ -720,7 +703,7 @@ with tab_flujo:
                     fig_cat.update_layout(showlegend=False, coloraxis_showscale=False, margin=dict(t=10, b=10, l=10, r=10))
                     st.plotly_chart(fig_cat, use_container_width=True)
                 else:
-                    st.info("No hay egresos registrados en este ciclo para graficar.")
+                    st.info("No hay egresos registrados para graficar.")
 
             with col_graf_flujo2:
                 st.markdown("#### 🚨 Control y Ritmo de Gasto")
@@ -737,12 +720,110 @@ with tab_flujo:
                     fecha_estimada_fin = proximo_mes.replace(day=1) - pd.Timedelta(days=1)
 
                 dias_restantes = max((fecha_estimada_fin.date() - hoy_date).days + 1, 1)
-                gasto_diario_sugerido = saldo_libre_ciclo / dias_restantes if saldo_libre_ciclo > 0 else 0.00
+                gasto_diario_sugerido = nomina_restante / dias_restantes if nomina_restante > 0 else 0.00
 
                 st.metric("⏳ Días Est. para Próximo Pago", f"{dias_restantes} días", delta=f"Proyectado al {fecha_estimada_fin.strftime('%d/%m')}")
                 st.metric("💳 Gasto Diario Máximo Sugerido", fmt_monto(gasto_diario_sugerido))
 
             st.markdown("---")
+
+            # --- TABLA DE HISTORIAL Y FILTROS ---
+            st.markdown("### 📋 Historial Completo de Nómina y Gastos")
+            df_display = df_flujo.copy()
+            df_display['fecha_str'] = df_display['fecha'].dt.strftime('%Y-%m-%d')
+            
+            with st.expander("🔍 Filtros de Búsqueda Avanzada", expanded=False):
+                col_f_flujo1, col_f_flujo2, col_f_flujo3, col_f_flujo4 = st.columns(4)
+                
+                with col_f_flujo1:
+                    min_fecha_f = df_display['fecha'].min().date()
+                    max_fecha_f = df_display['fecha'].max().date()
+                    f_rango = st.date_input("Rango de Fechas", [min_fecha_f, max_fecha_f], key="f_rango_flujo")
+                    
+                with col_f_flujo2:
+                    tipos_disponibles = ["Todos"] + list(df_display['tipo'].unique())
+                    f_tipo = st.selectbox("Tipo de Movimiento", tipos_disponibles, key="f_tipo_flujo")
+                    
+                with col_f_flujo3:
+                    f_metodo = st.selectbox(
+                        "💳 Método de Pago", 
+                        ["Todos", "Tarjeta de Débito", "Efectivo"], 
+                        key="f_metodo_pago"
+                    )
+                    
+                with col_f_flujo4:
+                    f_texto = st.text_input("Buscar Descripción / Categoría", "", key="f_texto_flujo")
+
+            if isinstance(f_rango, (list, tuple)) and len(f_rango) == 2:
+                df_display = df_display[(df_display['fecha'].dt.date >= f_rango[0]) & (df_display['fecha'].dt.date <= f_rango[1])]
+            
+            if f_tipo != "Todos":
+                df_display = df_display[df_display['tipo'] == f_tipo]
+                
+            if f_metodo != "Todos":
+                if f_metodo == "Tarjeta de Débito":
+                    df_display = df_display[df_display['descripcion'].str.contains("Débito", case=False, na=False) | (~df_display['descripcion'].str.contains("Efectivo", case=False, na=False))]
+                elif f_metodo == "Efectivo":
+                    df_display = df_display[df_display['descripcion'].str.contains("Efectivo", case=False, na=False)]
+
+            if f_texto:
+                df_display = df_display[
+                    df_display['descripcion'].str.contains(f_texto, case=False, na=False) |
+                    df_display['categoria'].str.contains(f_texto, case=False, na=False)
+                ]
+
+            config_columnas = {
+                "id": st.column_config.NumberColumn("ID", format="%d"),
+                "fecha_str": "Fecha",
+                "tipo": "Tipo",
+                "categoria": "Categoría",
+                "monto": st.column_config.NumberColumn("Monto", format="$%.2f"),
+                "descripcion": "Descripción"
+            }
+
+            if ocultar_saldos:
+                df_display_show = df_display.copy()
+                df_display_show['monto'] = "••••••"
+                st.dataframe(df_display_show[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_columnas, use_container_width=True, hide_index=True)
+            else:
+                st.dataframe(df_display[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_columnas, use_container_width=True, hide_index=True)
+
+            with st.expander("✏️ Editar o Eliminar un Registro"):
+                opciones_registros = {
+                    f"ID {row['id']} | {row['fecha_str']} - {row['descripcion']} (${row['monto']:,.2f})": row['id']
+                    for _, row in df_display.iterrows()
+                }
+                if opciones_registros:
+                    registro_sel = st.selectbox("Selecciona registro:", list(opciones_registros.keys()))
+                    id_seleccionado = opciones_registros[registro_sel]
+                    datos_reg = df_display[df_display['id'] == id_seleccionado].iloc[0]
+                    
+                    col_edit1, col_edit2 = st.columns(2)
+                    with col_edit1:
+                        st.markdown("#### 🔄 Editar")
+                        with st.form("form_editar_flujo"):
+                            e_fecha = st.date_input("Fecha Correcta", datos_reg['fecha'].date())
+                            e_tipo = st.selectbox("Tipo", ["Egreso", "Ingreso", "Retiro", "Inversion"], index=0)
+                            e_monto = st.number_input("Monto ($)", value=float(datos_reg['monto']), min_value=0.01, step=10.0, format="%.2f")
+                            e_cat = st.text_input("Categoría", value=str(datos_reg['categoria']))
+                            e_desc = st.text_input("Descripción", value=datos_reg['descripcion'])
+                            
+                            btn_actualizar = st.form_submit_button("💾 Guardar Cambios")
+                            if btn_actualizar:
+                                if actualizar_movimiento(id_seleccionado, e_tipo, e_monto, e_cat, e_desc, e_fecha, USER_ID):
+                                    st.success("✅ Registro actualizado.")
+                                    st.rerun()
+
+                    with col_edit2:
+                        st.markdown("#### 🗑️ Eliminar")
+                        if st.button("❌ Borrar Registro", use_container_width=True):
+                            if eliminar_movimiento(id_seleccionado, USER_ID):
+                                st.success("✅ Registro eliminado.")
+                                st.rerun()
+        else:
+            st.info("Aún no tienes movimientos registrados.")
+    else:
+        st.info("Aún no hay registros en la base de datos.")
 
 # =============================================================================
 # PESTAÑA 3: PORTAFOLIO DE INVERSIONES
