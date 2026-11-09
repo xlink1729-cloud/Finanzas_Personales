@@ -63,12 +63,10 @@ def get_connection():
     return psycopg2.connect(st.secrets["DATABASE_URL"])
 
 def generar_hash_password(password: str) -> str:
-    """Genera un hash seguro utilizando bcrypt."""
     salt = bcrypt.gensalt()
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 def verificar_password(password: str, hashed_password: str) -> bool:
-    """Valida la contraseña ingresada contra el hash almacenado (soporta bcrypt y legacy SHA-256)."""
     if not hashed_password:
         return False
         
@@ -87,7 +85,6 @@ def verificar_password(password: str, hashed_password: str) -> bool:
     return password == hashed_password
 
 def validar_usuario_db(username, password):
-    """Consulta las credenciales del usuario en la base de datos."""
     conn = None
     try:
         conn = get_connection()
@@ -108,7 +105,6 @@ def validar_usuario_db(username, password):
         if conn: conn.close()
             
 def registrar_usuario_db(username, password, nombre):
-    """Registra un nuevo usuario en el sistema con contraseña hasheada."""
     conn = None
     try:
         conn = get_connection()
@@ -133,7 +129,6 @@ def registrar_usuario_db(username, password, nombre):
         if conn: conn.close()
             
 def mostrar_login():
-    """Renderiza la interfaz gráfica de inicio de sesión y registro de cuentas."""
     st.markdown("""
         <style>
         .stApp {
@@ -284,7 +279,6 @@ if st.sidebar.button("Cerrar Sesión"):
     st.rerun()
 
 def fmt_monto(valor):
-    """Formatea valores monetarios aplicando el modo privacidad si está activo."""
     if ocultar_saldos:
         return "$ ••••••"
     return f"${valor:,.2f}"
@@ -293,7 +287,6 @@ def fmt_monto(valor):
 # 4. CAPA DE BASE DE DATOS (CRUD MOVIMIENTOS)
 # =============================================================================
 def obtener_movimientos(user_id):
-    """Consulta todos los movimientos financieros registrados para un usuario específico."""
     conn = None
     try:
         conn = get_connection()
@@ -311,7 +304,6 @@ def obtener_movimientos(user_id):
         if conn: conn.close()
 
 def guardar_movimiento(tipo, monto, categoria, descripcion, fecha, user_id):
-    """Inserta un nuevo movimiento financiero en la base de datos."""
     conn = None
     try:
         conn = get_connection()
@@ -331,7 +323,6 @@ def guardar_movimiento(tipo, monto, categoria, descripcion, fecha, user_id):
         if conn: conn.close()
 
 def eliminar_movimiento(id_mov, user_id):
-    """Elimina un registro de la tabla de movimientos por su ID y usuario."""
     conn = None
     try:
         conn = get_connection()
@@ -352,7 +343,6 @@ def eliminar_movimiento(id_mov, user_id):
             conn.close()
 
 def actualizar_movimiento(id_movimiento, tipo, monto, categoria, descripcion, fecha, user_id):
-    """Actualiza un movimiento financiero existente en la base de datos."""
     conn = None
     try:
         conn = get_connection()
@@ -400,7 +390,6 @@ with tab_kpis:
     if not df_raw_kpi.empty:
         df_raw_kpi['fecha_dt'] = pd.to_datetime(df_raw_kpi['fecha'])
         
-        # Aislar inversiones del flujo operativo
         plataformas_conocidas = ["fintual", "cetes", "nu", "finsus", "mercado pago", "gbm", "emergencia"]
         mask_inv = (
             df_raw_kpi['categoria'].str.contains("inversi", case=False, na=False) |
@@ -524,7 +513,7 @@ with tab_kpis:
 
         st.markdown("---")
 
-        # --- FILTRO POR FECHA Y GRÁFICA DE DESTINO DE LA NÓMINA ---
+        # --- FILTRO POR FECHA Y GRÁFICA DE DESTINO DE LA NÓMINA (CON LEYENDA RESTAURADA) ---
         st.markdown("#### 🍩 Destino y Composición de la Nómina del Ciclo")
         col_f1, col_f2 = st.columns([1, 2])
         with col_f1:
@@ -581,21 +570,36 @@ with tab_kpis:
         if not df_destino_nomina.empty:
             fig_destino = px.pie(
                 df_destino_nomina, values="Monto", names="Destino", hole=0.50,
+                color="Destino",
                 color_discrete_map={
-                    "💳 Pagos a TDC": "#85a2b6",
-                    "🔵 Gastos en Débito": "#496a81",
-                    "👛 Gastos en Efectivo": "#2b3a4a",
-                    "🟢 Saldo Libre / Disponible": "#2E7D32"
+                    "💳 Pagos a TDC": "#EF4444",
+                    "🔵 Gastos en Débito": "#3B82F6",
+                    "👛 Gastos en Efectivo": "#F59E0B",
+                    "🟢 Saldo Libre / Disponible": "#60A5FA"
                 }
+            )
+            fig_destino.update_traces(
+                textposition='auto', 
+                textinfo='percent+label',
+                hovertemplate='<b>%{label}</b><br>Monto: $%{value:,.2f}<br>Porcentaje: %{percent}'
             )
             fig_destino.update_layout(
                 annotations=[dict(text=f"<b>Base Periodo</b><br>{fmt_monto(base_disponible_periodo)}", x=0.5, y=0.5, font_size=15, showarrow=False)],
-                height=550, showlegend=False, margin=dict(t=20, b=20, l=10, r=10)
+                height=500, 
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5),
+                margin=dict(t=20, b=40, l=10, r=10)
             )
             st.plotly_chart(fig_destino, use_container_width=True)
 
+            col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+            col_m1.metric("💳 Pagos a TDC", fmt_monto(pagos_tdc_filtrado))
+            col_m2.metric("🔵 Gastos en Débito", fmt_monto(gastos_debito_puros))
+            col_m3.metric("👛 Gastos en Efectivo", fmt_monto(gastos_efectivo_filtrado))
+            col_m4.metric("🟢 Saldo Libre", fmt_monto(saldo_libre_filtrado))
+
 # =============================================================================
-# PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA (CON FILTRO DE MÉTODO DE PAGO)
+# PESTAÑA 2: FLUJO QUINCENAL Y NÓMINA (RESTAURADA CON GRÁFICA Y CONTROL DE DÍAS)
 # =============================================================================
 with tab_flujo:
     
@@ -682,9 +686,48 @@ with tab_flujo:
             col_q3.metric("💵 Gastos en Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo), delta_color="inverse")
             col_q4.metric("🏦 Nómina Recibida", fmt_monto(nomina_ingresada_ciclo))
 
+            # --- SECCIÓN RESTAURADA: GRÁFICO DE BARRAS POR CATEGORÍA Y RITMO DIARIO ---
+            st.markdown("---")
+            col_graf_flujo1, col_graf_flujo2 = st.columns([1, 1])
+
+            with col_graf_flujo1:
+                st.markdown("#### 🛒 Desglose de Gastos por Categoría")
+                df_egresos = df_flujo[df_flujo['tipo'] == 'Egreso']
+                if not df_egresos.empty:
+                    gastos_cat = df_egresos.groupby('categoria')['monto'].sum().reset_index()
+                    fig_cat = px.bar(
+                        gastos_cat, x='monto', y='categoria', orientation='h',
+                        color='monto', color_continuous_scale='Reds',
+                        text_auto='.2f', labels={'monto': 'Total ($)', 'categoria': 'Categoría'}
+                    )
+                    fig_cat.update_layout(showlegend=False, coloraxis_showscale=False, margin=dict(t=10, b=10, l=10, r=10))
+                    st.plotly_chart(fig_cat, use_container_width=True)
+                else:
+                    st.info("No hay egresos registrados para graficar.")
+
+            with col_graf_flujo2:
+                st.markdown("#### 🚨 Control y Ritmo de Gasto")
+                dia_pago = inicio_q.day
+                if dia_pago >= 25 or dia_pago <= 5:
+                    if inicio_q.day >= 25:
+                        mes_target = inicio_q.month + 1 if inicio_q.month < 12 else 1
+                        anio_target = inicio_q.year if inicio_q.month < 12 else inicio_q.year + 1
+                        fecha_estimada_fin = pd.Timestamp(year=anio_target, month=mes_target, day=15)
+                    else:
+                        fecha_estimada_fin = inicio_q.replace(day=15)
+                else:
+                    proximo_mes = (inicio_q.replace(day=28) + pd.Timedelta(days=4))
+                    fecha_estimada_fin = proximo_mes.replace(day=1) - pd.Timedelta(days=1)
+
+                dias_restantes = max((fecha_estimada_fin.date() - hoy_date).days + 1, 1)
+                gasto_diario_sugerido = nomina_restante / dias_restantes if nomina_restante > 0 else 0.00
+
+                st.metric("⏳ Días Est. para Próximo Pago", f"{dias_restantes} días", delta=f"Proyectado al {fecha_estimada_fin.strftime('%d/%m')}")
+                st.metric("💳 Gasto Diario Máximo Sugerido", fmt_monto(gasto_diario_sugerido))
+
             st.markdown("---")
 
-            # --- TABLA DE HISTORIAL Y NUEVOS FILTROS (INCLUYENDO MÉTODO DE PAGO) ---
+            # --- TABLA DE HISTORIAL Y FILTROS ---
             st.markdown("### 📋 Historial Completo de Nómina y Gastos")
             df_display = df_flujo.copy()
             df_display['fecha_str'] = df_display['fecha'].dt.strftime('%Y-%m-%d')
@@ -702,18 +745,15 @@ with tab_flujo:
                     f_tipo = st.selectbox("Tipo de Movimiento", tipos_disponibles, key="f_tipo_flujo")
                     
                 with col_f_flujo3:
-                    # NUEVO FILTRO: Método de Pago basado en el prefijo de la descripción
                     f_metodo = st.selectbox(
                         "💳 Método de Pago", 
                         ["Todos", "Tarjeta de Débito", "Efectivo"], 
-                        help="Filtra si el movimiento se pagó con tarjeta de débito o en efectivo.",
                         key="f_metodo_pago"
                     )
                     
                 with col_f_flujo4:
                     f_texto = st.text_input("Buscar Descripción / Categoría", "", key="f_texto_flujo")
 
-            # Aplicar filtros al DataFrame de visualización
             if isinstance(f_rango, (list, tuple)) and len(f_rango) == 2:
                 df_display = df_display[(df_display['fecha'].dt.date >= f_rango[0]) & (df_display['fecha'].dt.date <= f_rango[1])]
             
@@ -814,12 +854,158 @@ with tab_ahorros:
                     st.success(f"✅ Portafolio de {plataforma} actualizado.")
                     st.rerun()
 
+    st.markdown("---")
+
+    df_raw = obtener_movimientos(current_user_id)
+    
+    if not df_raw.empty:
+        plataformas_conocidas = ["fintual", "cetes", "nu", "finsus", "mercado pago", "gbm", "emergencia"]
+        mask_inv = (
+            df_raw['categoria'].str.contains("inversi", case=False, na=False) |
+            df_raw['tipo'].str.contains("inversi", case=False, na=False) |
+            df_raw['categoria'].str.lower().str.contains('|'.join(plataformas_conocidas), na=False)
+        )
+        df_inversiones = df_raw[mask_inv].copy()
+        
+        if not df_inversiones.empty:
+            def extraer_datos_inv(row):
+                cat, desc = str(row['categoria']), str(row['descripcion'])
+                plat = cat.replace("Inversión - ", "").replace("Inversion - ", "").strip() if "Inversión - " in cat or "Inversion - " in cat else "General"
+                tasa = 0.0
+                m = re.search(r"Tasa:\s*([\d\.]+)%", desc)
+                if m:
+                    try: tasa = float(m.group(1))
+                    except: pass
+                return pd.Series([plat, tasa], index=['Plataforma', 'Tasa (%)'])
+
+            df_inversiones[['Plataforma', 'Tasa (%)']] = df_inversiones.apply(extraer_datos_inv, axis=1)
+            df_inversiones['fecha'] = pd.to_datetime(df_inversiones['fecha'])
+            df_inversiones = df_inversiones.sort_values(by=['Plataforma', 'fecha', 'id'])
+
+            resumen_filas = []
+            for plat, group in df_inversiones.groupby('Plataforma'):
+                reg = group.iloc[-1]
+                saldo_actual = reg['monto']
+                tasa_actual = reg['Tasa (%)']
+                ganancia_mensual = (saldo_actual * (tasa_actual / 100)) / 12
+
+                resumen_filas.append({
+                    "Plataforma": plat,
+                    "Saldo Actual": saldo_actual,
+                    "Tasa Anual (%)": tasa_actual,
+                    "Ganancia Est. / Mes": ganancia_mensual
+                })
+
+            df_resumen_inv = pd.DataFrame(resumen_filas)
+            
+            st.dataframe(
+                df_resumen_inv,
+                column_config={
+                    "Plataforma": "Fondo / Plataforma",
+                    "Saldo Actual": st.column_config.NumberColumn("Saldo Actual", format="$%.2f"),
+                    "Tasa Anual (%)": st.column_config.NumberColumn("Tasa Anual", format="%.2f%%"),
+                    "Ganancia Est. / Mes": st.column_config.NumberColumn("Est. Ganancia/Mes", format="$%.2f")
+                },
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.markdown("---")
+            col_graf_inv1, col_graf_inv2 = st.columns(2)
+
+            with col_graf_inv1:
+                st.markdown("#### 🥧 Distribución del Portafolio")
+                fig_pie_inv = px.pie(
+                    df_resumen_inv, values='Saldo Actual', names='Plataforma', hole=0.4,
+                    color_discrete_sequence=px.colors.qualitative.Bold
+                )
+                fig_pie_inv.update_traces(textinfo='percent+label')
+                fig_pie_inv.update_layout(showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
+                st.plotly_chart(fig_pie_inv, use_container_width=True)
+
+            with col_graf_inv2:
+                st.markdown("#### 💸 Rendimiento Estimado por Fondo ($/Mes)")
+                fig_bar_inv = px.bar(
+                    df_resumen_inv, x='Plataforma', y='Ganancia Est. / Mes',
+                    color='Ganancia Est. / Mes', color_continuous_scale='Greens',
+                    text_auto='.2f'
+                )
+                fig_bar_inv.update_layout(coloraxis_showscale=False, margin=dict(t=10, b=10, l=10, r=10))
+                st.plotly_chart(fig_bar_inv, use_container_width=True)
+
 # =============================================================================
 # PESTAÑA 4: PRESUPUESTO 50/30/20
 # =============================================================================
 with tab_presupuesto:
     st.markdown("### 📊 Presupuesto Mensual (Regla 50 / 30 / 20)")
     st.caption("Planifica tus finanzas sobre tu ingreso total estimado del mes y monitorea el avance quincenal.")
+
+    current_user_id = st.session_state.get("user_id")
+    df_raw = obtener_movimientos(current_user_id)
+
+    with st.expander("⚙️ Configurar Ingreso Mensual Base", expanded=False):
+        col_inc1, col_inc2 = st.columns(2)
+        with col_inc1:
+            ingreso_q1 = st.number_input("Ingreso Neto 1.ª Quincena ($)", min_value=0.0, value=10000.0, step=500.0, format="%.2f")
+        with col_inc2:
+            ingreso_q2 = st.number_input("Ingreso Neto 2.ª Quincena ($)", min_value=0.0, value=10000.0, step=500.0, format="%.2f")
+        
+        ingreso_mensual_total = ingreso_q1 + ingreso_q2
+        st.info(f"💡 **Ingreso Total Estimado del Mes:** {fmt_monto(ingreso_mensual_total)}")
+
+    limite_necesidades = ingreso_mensual_total * 0.50
+    limite_deseos = ingreso_mensual_total * 0.30
+    limite_ahorro = ingreso_mensual_total * 0.20
+
+    st.markdown("---")
+
+    col_p1, col_p2, col_p3 = st.columns(3)
+    col_p1.metric(label="🏠 50% Necesidades / Fijos", value=fmt_monto(limite_necesidades))
+    col_p2.metric(label="🎉 30% Deseos / Estilo de Vida", value=fmt_monto(limite_deseos))
+    col_p3.metric(label="🛡️ 20% Ahorro / Inversión", value=fmt_monto(limite_ahorro))
+
+    st.markdown("---")
+
+    if not df_raw.empty:
+        df_raw['fecha'] = pd.to_datetime(df_raw['fecha'])
+        fecha_actual = obtener_fecha_local()
+        df_mes = df_raw[(df_raw['fecha'].dt.month == fecha_actual.month) & (df_raw['fecha'].dt.year == fecha_actual.year)].copy()
+
+        mask_gastos = df_mes['tipo'].str.lower().str.contains("gasto|salida|egreso", na=False)
+        df_gastos_mes = df_mes[mask_gastos].copy()
+
+        mask_fijos = df_gastos_mes['categoria'].str.lower().str.contains("renta|celular|plan|servicio|luz|agua|despensa", na=False)
+        mask_ahorro = df_gastos_mes['tipo'].str.lower().str.contains("inversion|ahorro", na=False) | df_gastos_mes['categoria'].str.lower().str.contains("inversi|ahorro", na=False)
+        mask_deseos = ~mask_fijos & ~mask_ahorro
+
+        gasto_fijos_real = df_gastos_mes[mask_fijos]['monto'].sum()
+        gasto_ahorro_real = df_gastos_mes[mask_ahorro]['monto'].sum()
+        gasto_deseos_real = df_gastos_mes[mask_deseos]['monto'].sum()
+    else:
+        gasto_fijos_real = 0.0
+        gasto_deseos_real = 0.0
+        gasto_ahorro_real = 0.0
+
+    st.markdown("#### 📈 Ejecución de tu Presupuesto este Mes")
+    col_b1, col_b2, col_b3 = st.columns(3)
+
+    with col_b1:
+        st.markdown("**🏠 Gastos Fijos / Necesidades**")
+        pct_fijos = min(1.0, gasto_fijos_real / limite_necesidades) if limite_necesidades > 0 else 0
+        st.progress(pct_fijos)
+        st.caption(f"Gastado: **${gasto_fijos_real:,.2f}** / **${limite_necesidades:,.2f}** ({pct_fijos*100:.1f}%)")
+
+    with col_b2:
+        st.markdown("**🎉 Deseos y Salidas**")
+        pct_deseos = min(1.0, gasto_deseos_real / limite_deseos) if limite_deseos > 0 else 0
+        st.progress(pct_deseos)
+        st.caption(f"Gastado: **${gasto_deseos_real:,.2f}** / **${limite_deseos:,.2f}** ({pct_deseos*100:.1f}%)")
+
+    with col_b3:
+        st.markdown("**🛡️ Meta de Ahorro e Inversión (20%)**")
+        pct_ahorro = min(1.0, gasto_ahorro_real / limite_ahorro) if limite_ahorro > 0 else 0
+        st.progress(pct_ahorro)
+        st.caption(f"Aportado: **${gasto_ahorro_real:,.2f}** / **${limite_ahorro:,.2f}** ({pct_ahorro*100:.1f}%)")
 
 # =============================================================================
 # PESTAÑA 5: BILLETERA Y EFECTIVO
@@ -828,23 +1014,19 @@ with tab_efectivo:
     st.header("👛 Control de Billetera y Efectivo")
     st.caption("Administra los billetes que retiras del cajero o ajusta tu saldo físico sin alterar tu saldo bancario.")
 
-    # -------------------------------------------------------------------------
-    # 1. DESPLEGABLE: ENTRADA DE EFECTIVO / AJUSTE DE SALDO
-    # -------------------------------------------------------------------------
     with st.expander("📥 + Registrar Entrada de Efectivo / Ajuste de Saldo", expanded=False):
         st.subheader("1. 📥 Entrada de Efectivo / Ajuste")
         
         tipo_entrada = st.radio(
             "Origen del Dinero", 
             ["🏦 Retiro de Cajero (Descuenta de Débito)", "💵 Ajuste / Dinero Extra (NO afecta Débito)"],
-            help="Usa 'Ajuste' si tenías efectivo guardado previamente o no quieres que reste a tu nómina.",
             key="radio_tipo_entrada_efectivo"
         )
 
         with st.form("form_retiro_efectivo", clear_on_submit=True):
             monto_retiro = st.number_input("Monto ($)", min_value=1.0, step=10.0, format="%.2f")
             fecha_retiro = st.date_input("Fecha", obtener_fecha_local(), key="fecha_retiro_ef")
-            desc_retiro = st.text_input("Detalle / Notas", placeholder="Ej. Cajero Santander / Efectivo que ya tenía")
+            desc_retiro = st.text_input("Detalle / Notas", placeholder="Ej. Cajero Santander")
             
             submit_retiro = st.form_submit_button("💾 Guardar Entrada a Billetera", use_container_width=True)
 
@@ -862,25 +1044,17 @@ with tab_efectivo:
                 st.success(f"✅ Se agregaron {fmt_monto(monto_retiro)} a tu Billetera.")
                 st.rerun()
 
-    # -------------------------------------------------------------------------
-    # 2. DESPLEGABLE: REGISTRO DE SALIDA Y GASTOS EN EFECTIVO
-    # -------------------------------------------------------------------------
     with st.expander("🛒 - Registrar Gasto Realizado en Efectivo", expanded=False):
         st.subheader("2. 💸 Registrar Gasto Realizado en Efectivo")
-        st.info("Esto descuenta directamente del efectivo de tu bolsillo y asigna la categoría de gasto.")
         
         with st.form("form_gasto_efectivo", clear_on_submit=True):
             monto_gasto_e = st.number_input("Monto Gastado ($)", min_value=0.01, step=10.0, format="%.2f")
             cat_gasto_e = st.selectbox("Categoría del Gasto", [
-                "Alimentación / Súper", 
-                "Transporte / Gasolina", 
-                "Ocio / Entretenimiento", 
-                "Vivienda / Servicios", 
-                "Salud / Gastos Médicos", 
-                "Otros Egresos"
+                "Alimentación / Súper", "Transporte / Gasolina", "Ocio / Entretenimiento", 
+                "Vivienda / Servicios", "Salud / Gastos Médicos", "Otros Egresos"
             ])
             fecha_gasto_e = st.date_input("Fecha del Gasto", obtener_fecha_local(), key="fecha_gasto_ef")
-            desc_gasto_e = st.text_input("Detalle del Gasto", placeholder="Ej. Tacos, Pasaje, Propina, etc.")
+            desc_gasto_e = st.text_input("Detalle del Gasto", placeholder="Ej. Tacos, Pasaje, etc.")
             
             submit_gasto_e = st.form_submit_button("💸 Registrar Salida de Billetera", use_container_width=True)
 
@@ -892,9 +1066,6 @@ with tab_efectivo:
 
     st.markdown("---")
 
-    # -------------------------------------------------------------------------
-    # 3. BALANCE Y TABLA DE HISTORIAL EXCLUSIVO DE EFECTIVO
-    # -------------------------------------------------------------------------
     df_raw_efectivo = obtener_movimientos(USER_ID)
 
     if not df_raw_efectivo.empty:
@@ -912,7 +1083,6 @@ with tab_efectivo:
         saldo_billetera_actual = total_retirado - total_gastado_efectivo
 
         st.markdown("### 📊 Balance Actual de la Billetera")
-        
         c_b1, c_b2, c_b3 = st.columns(3)
         c_b1.metric("📥 Total Entradas / Retiros", fmt_monto(total_retirado))
         c_b2.metric("💸 Total Gastado en Efectivo", fmt_monto(total_gastado_efectivo), delta_color="inverse")
@@ -928,32 +1098,25 @@ with tab_efectivo:
             df_hist_efectivo['fecha_dt'] = pd.to_datetime(df_hist_efectivo['fecha'])
             df_hist_efectivo['fecha_str'] = df_hist_efectivo['fecha_dt'].dt.strftime('%Y-%m-%d')
             
-            # --- SECCIÓN DE FILTROS PARA EFECTIVO ---
             with st.expander("🔍 Filtros de Efectivo", expanded=False):
                 col_fe1, col_fe2, col_fe3 = st.columns(3)
-                
                 with col_fe1:
                     min_fecha_ef = df_hist_efectivo['fecha_dt'].min().date()
                     max_fecha_ef = df_hist_efectivo['fecha_dt'].max().date()
                     f_rango_ef = st.date_input("Rango de Fechas", [min_fecha_ef, max_fecha_ef], key="f_rango_ef")
-                    
                 with col_fe2:
                     tipos_efectivo = ["Todos"] + list(df_hist_efectivo['tipo'].unique())
                     f_tipo_ef = st.selectbox("Tipo de Operación", tipos_efectivo, key="f_tipo_ef")
-                    
                 with col_fe3:
                     f_texto_ef = st.text_input("Buscar en Detalle / Categoría", "", key="f_texto_ef")
 
-            # Aplicar filtros a df_hist_efectivo
             if isinstance(f_rango_ef, (list, tuple)) and len(f_rango_ef) == 2:
                 df_hist_efectivo = df_hist_efectivo[
                     (df_hist_efectivo['fecha_dt'].dt.date >= f_rango_ef[0]) & 
                     (df_hist_efectivo['fecha_dt'].dt.date <= f_rango_ef[1])
                 ]
-                
             if f_tipo_ef != "Todos":
                 df_hist_efectivo = df_hist_efectivo[df_hist_efectivo['tipo'] == f_tipo_ef]
-                
             if f_texto_ef:
                 df_hist_efectivo = df_hist_efectivo[
                     df_hist_efectivo['descripcion'].str.contains(f_texto_ef, case=False, na=False) |
@@ -976,50 +1139,40 @@ with tab_efectivo:
             else:
                 st.dataframe(df_hist_efectivo[['id', 'fecha_str', 'tipo', 'categoria', 'monto', 'descripcion']], column_config=config_ef_cols, use_container_width=True, hide_index=True)
 
-            # -----------------------------------------------------------------
-            # 4. GESTIÓN Y EDICIÓN/ELIMINACIÓN SEGURO CON CONFIRMACIÓN
-            # -----------------------------------------------------------------
             st.markdown("---")
             st.markdown("### 🛠️ Modificar o Eliminar Registro de Efectivo")
             
             lista_ids_efectivo = df_hist_efectivo['id'].tolist()
             if lista_ids_efectivo:
                 id_sel_ef = st.selectbox("Selecciona el ID del registro a gestionar:", lista_ids_efectivo, key="sb_id_efectivo")
-                
                 row_sel_ef = df_hist_efectivo[df_hist_efectivo['id'] == id_sel_ef].iloc[0]
                 
                 if "mostrar_edit_ef" not in st.session_state:
                     st.session_state.mostrar_edit_ef = False
 
                 col_btn1, col_btn2 = st.columns(2)
-                
                 with col_btn1:
                     if st.button("✏️ Editar Registro", use_container_width=True, key="btn_abrir_edit_ef"):
                         st.session_state.mostrar_edit_ef = True
-
                 with col_btn2:
                     if st.button("🗑️ Eliminar Registro", use_container_width=True, type="secondary", key="btn_del_ef"):
                         st.session_state.confirmar_del_ef = True
 
-                # Cuadro de confirmación previa para evitar pérdidas accidentales
                 if st.session_state.get("confirmar_del_ef", False):
                     st.warning(f"⚠️ ¿Estás seguro de que deseas eliminar el registro ID **{id_sel_ef}** ({row_sel_ef['descripcion']} - {fmt_monto(row_sel_ef['monto'])})?")
                     c_del_confirm, c_del_cancel = st.columns(2)
-                    
                     with c_del_confirm:
                         if st.button("🔴 Sí, Eliminar Definitivamente", use_container_width=True, type="primary"):
                             if eliminar_movimiento(id_sel_ef, USER_ID):
                                 st.session_state.confirmar_del_ef = False
                                 st.success("✅ Registro eliminado correctamente.")
                                 st.rerun()
-                                
                     with c_del_cancel:
                         if st.button("❌ Cancelar Eliminación", use_container_width=True):
                             st.session_state.confirmar_del_ef = False
-                            st.info("Operación de eliminación cancelada.")
+                            st.info("Operación cancelada.")
                             st.rerun()
 
-                # Formulario desplegable para la edición
                 if st.session_state.mostrar_edit_ef:
                     st.info(f"Editando registro ID #{id_sel_ef}")
                     with st.form("form_editar_efectivo"):
@@ -1046,7 +1199,6 @@ with tab_efectivo:
                             st.rerun()
             else:
                 st.info("No hay registros que coincidan con los filtros seleccionados.")
-
         else:
             st.info("Aún no tienes movimientos registrados en efectivo.")
     else:
