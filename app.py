@@ -1098,6 +1098,17 @@ with tab_efectivo:
     df_raw_efectivo = obtener_movimientos(USER_ID)
 
     if not df_raw_efectivo.empty:
+        df_raw_efectivo['fecha_dt'] = pd.to_datetime(df_raw_efectivo['fecha'])
+
+        # --- Identificar inicio del ciclo activo para el gasto en efectivo ---
+        mask_nomina_ef = (df_raw_efectivo['tipo'] == 'Ingreso') & (df_raw_efectivo['categoria'].str.contains("Nómina", case=False, na=False))
+        df_nom_ef = df_raw_efectivo[mask_nomina_ef].sort_values('fecha_dt', ascending=False)
+        
+        if not df_nom_ef.empty:
+            inicio_ciclo_ef = pd.Timestamp(df_nom_ef.iloc[0]['fecha_dt']).normalize()
+        else:
+            inicio_ciclo_ef = pd.Timestamp(obtener_fecha_local()).replace(day=1).normalize()
+
         mask_entradas_efectivo = (
             (df_raw_efectivo['tipo'] == 'Retiro') | 
             (df_raw_efectivo['categoria'] == 'Ajuste de Efectivo')
@@ -1111,11 +1122,20 @@ with tab_efectivo:
         total_gastado_efectivo = df_raw_efectivo[mask_gastos_efectivo]['monto'].sum()
         saldo_billetera_actual = total_retirado - total_gastado_efectivo
 
-        st.markdown("### 📊 Balance Actual de la Billetera")
-        c_b1, c_b2, c_b3 = st.columns(3)
+        # --- Cálculo del gasto en efectivo exclusivo del ciclo activo ---
+        mask_gastos_efectivo_ciclo = (
+            mask_gastos_efectivo & 
+            (df_raw_efectivo['fecha_dt'] >= inicio_ciclo_ef)
+        )
+        gastos_efectivo_ciclo_actual = df_raw_efectivo[mask_gastos_efectivo_ciclo]['monto'].sum()
+
+        st.markdown(f"### 📊 Balance Actual de la Billetera *(Ciclo desde {inicio_ciclo_ef.strftime('%d/%m/%Y')})*")
+        
+        c_b1, c_b2, c_b3, c_b4 = st.columns(4)
         c_b1.metric("📥 Total Entradas / Retiros", fmt_monto(total_retirado))
-        c_b2.metric("💸 Total Gastado en Efectivo", fmt_monto(total_gastado_efectivo), delta_color="inverse")
-        c_b3.metric("💵 Disponible en Bolsillo / Billetera", fmt_monto(saldo_billetera_actual))
+        c_b2.metric("💸 Total Gastado Histórico", fmt_monto(total_gastado_efectivo), delta_color="inverse")
+        c_b3.metric("👛 Gastado Efectivo (Ciclo)", fmt_monto(gastos_efectivo_ciclo_actual), delta_color="inverse", help="Efectivo consumido solo en esta quincena")
+        c_b4.metric("💵 Disponible en Bolsillo / Billetera", fmt_monto(saldo_billetera_actual))
 
         st.markdown("---")
         st.markdown("### 📋 Historial Exclusivo de Efectivo")
@@ -1124,7 +1144,6 @@ with tab_efectivo:
         df_hist_efectivo = df_raw_efectivo[mask_movs_efectivo].copy()
 
         if not df_hist_efectivo.empty:
-            df_hist_efectivo['fecha_dt'] = pd.to_datetime(df_hist_efectivo['fecha'])
             df_hist_efectivo['fecha_str'] = df_hist_efectivo['fecha_dt'].dt.strftime('%Y-%m-%d')
             
             with st.expander("🔍 Filtros de Efectivo", expanded=False):
